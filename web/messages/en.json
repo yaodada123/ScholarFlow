@@ -6,6 +6,7 @@
     "getStarted": "Get Started",
     "learnMore": "Learn More",
     "starOnGitHub": "Star on GitHub",
+    "upstream": "Upstream",
     "send": "Send",
     "stop": "Stop",
     "linkNotReliable": "This link might be a hallucination from AI model and may not be reliable.",
@@ -16,12 +17,12 @@
     "placeholderWithRag": "What can I do for you? \nYou may refer to RAG resources by using @."
   },
   "header": {
-    "title": "DeerFlow"
+    "title": "DeerFlow TS"
   },
   "hero": {
     "title": "Deep Research",
     "subtitle": "at Your Fingertips",
-    "description": "Meet DeerFlow, your personal Deep Research assistant. With powerful tools like search engines, web crawlers, Python and MCP services, it delivers instant insights, comprehensive reports, and even captivating podcasts.",
+    "description": "Meet DeerFlow TS, your personal Deep Research assistant. With powerful tools like search engines, web crawlers, Python and MCP services, it delivers instant insights, comprehensive reports, and even captivating podcasts.",
     "footnote": "* DEER stands for Deep Exploration and Efficient Research."
   },
   "settings": {
@@ -97,17 +98,17 @@
   "footer": {
     "quote": "Originated from Open Source, give back to Open Source.",
     "license": "Licensed under MIT License",
-    "copyright": "DeerFlow"
+    "copyright": "DeerFlow TS"
   },
   "chat": {
     "page": {
-      "loading": "Loading DeerFlow...",
+      "loading": "Loading DeerFlow TS...",
       "welcomeUser": "Welcome, {username}",
-      "starOnGitHub": "Star DeerFlow on GitHub"
+      "starOnGitHub": "Star DeerFlow TS on GitHub"
     },
     "welcome": {
       "greeting": "👋 Hello, there!",
-      "description": "Welcome to 🦌 DeerFlow, a deep research assistant built on cutting-edge language models, helps you search on web, browse information, and handle complex tasks."
+      "description": "Welcome to 🦌 DeerFlow TS, a TypeScript edition of DeerFlow focused on deep research and tool-augmented workflows."
     },
     "conversationStarters": [
       "How many times taller is the Eiffel Tower than the tallest building in the world?",
@@ -278,8 +279,8 @@
       "description": "Experience the agent teamwork with our Supervisor + Handoffs design pattern."
     },
     "joinCommunity": {
-      "title": "Join the DeerFlow Community",
-      "description": "Contribute brilliant ideas to shape the future of DeerFlow. Collaborate, innovate, and make impacts.",
+      "title": "Join the DeerFlow TS Community",
+      "description": "Contribute to the TypeScript edition, and follow the original DeerFlow upstream for the source of inspiration.",
       "contributeNow": "Contribute Now"
     }
   }

@@ -18,7 +18,7 @@ export function SiteHeader() {
       <div className="container flex h-15 items-center justify-between px-3">
         <div className="text-xl font-medium">
           <span className="mr-1 text-2xl">🦌</span>
-          <span>DeerFlow</span>
+          <span>DeerFlow TS</span>
         </div>
         <div className="relative flex items-center gap-2">
           <LanguageSwitcher />
@@ -35,13 +35,23 @@ export function SiteHeader() {
             asChild
             className="group relative z-10"
           >
-            <Link href="https://github.com/bytedance/deer-flow" target="_blank">
+            <Link
+              href="https://github.com/yaodada123/deer-flow-ts"
+              target="_blank"
+            >
               <GitHubLogoIcon className="size-4" />
               {t('starOnGitHub')}
               {env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY &&
                 env.GITHUB_OAUTH_TOKEN && <StarCounter />}
             </Link>
           </Button>
+          <Link
+            href="https://github.com/bytedance/deer-flow"
+            target="_blank"
+            className="relative z-10 text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground"
+          >
+            {t('upstream')}
+          </Link>
         </div>
       </div>
       <hr className="from-border/0 via-border/70 to-border/0 m-0 h-px w-full border-none bg-gradient-to-r" />
@@ -50,11 +60,11 @@ export function SiteHeader() {
 }
 
 export async function StarCounter() {
-  let stars = 1000; // Default value
+  let stars: number | null = null;
 
   try {
     const response = await fetch(
-      "https://api.github.com/repos/bytedance/deer-flow",
+      "https://api.github.com/repos/yaodada123/deer-flow-ts",
       {
         headers: env.GITHUB_OAUTH_TOKEN
           ? {
@@ -70,7 +80,7 @@ export async function StarCounter() {
 
     if (response.ok) {
       const data = await response.json();
-      stars = data.stargazers_count ?? stars; // Update stars if API response is valid
+      stars = typeof data?.stargazers_count === "number" ? data.stargazers_count : null;
     }
   } catch (error) {
     console.error("Error fetching GitHub stars:", error);
@@ -78,7 +88,7 @@ export async function StarCounter() {
   return (
     <>
       <StarFilledIcon className="size-4 transition-colors duration-300 group-hover:text-yellow-500" />
-      {stars && (
+      {stars !== null && (
         <NumberTicker className="font-mono tabular-nums" value={stars} />
       )}
     </>

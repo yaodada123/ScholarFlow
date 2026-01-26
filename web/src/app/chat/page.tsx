@@ -20,7 +20,7 @@ const Main = dynamic(() => import("./main"), {
   ssr: false,
   loading: () => (
     <div className="flex h-full w-full items-center justify-center">
-      Loading DeerFlow...
+      Loading DeerFlow TS...
     </div>
   ),
 });
@@ -36,7 +36,7 @@ export default function HomePage() {
           <Tooltip title={t("starOnGitHub")}>
             <Button variant="ghost" size="icon" asChild>
               <Link
-                href="https://github.com/bytedance/deer-flow"
+                href="https://github.com/yaodada123/deer-flow-ts"
                 target="_blank"
               >
                 <GithubOutlined />

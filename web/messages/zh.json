@@ -6,6 +6,7 @@
     "getStarted": "开始使用",
     "learnMore": "了解更多",
     "starOnGitHub": "在 GitHub 上点赞",
+    "upstream": "上游项目",
     "send": "发送",
     "stop": "停止",
     "linkNotReliable": "此链接可能是 AI 生成的幻觉，可能并不可靠。",
@@ -16,12 +17,12 @@
     "placeholderWithRag": "我能帮你做什么？\n你可以通过 @ 引用 RAG 资源。"
   },
   "header": {
-    "title": "DeerFlow"
+    "title": "DeerFlow TS"
   },
   "hero": {
     "title": "深度研究",
     "subtitle": "触手可及",
-    "description": "认识 DeerFlow，您的个人深度研究助手。凭借搜索引擎、网络爬虫、Python 和 MCP 服务等强大工具，它能提供即时洞察、全面报告，甚至制作引人入胜的播客。",
+    "description": "认识 DeerFlow TS，您的个人深度研究助手。凭借搜索引擎、网络爬虫、Python 和 MCP 服务等强大工具，它能提供即时洞察、全面报告，甚至制作引人入胜的播客。",
     "footnote": "* DEER 代表深度探索和高效研究。"
   },
   "settings": {
@@ -97,17 +98,17 @@
   "footer": {
     "quote": "源于开源，回馈开源。",
     "license": "基于 MIT 许可证授权",
-    "copyright": "DeerFlow"
+    "copyright": "DeerFlow TS"
   },
   "chat": {
     "page": {
-      "loading": "正在加载 DeerFlow...",
+      "loading": "正在加载 DeerFlow TS...",
       "welcomeUser": "欢迎，{username}",
       "starOnGitHub": "在 GitHub 上点赞"
     },
     "welcome": {
       "greeting": "👋 你好！",
-      "description": "欢迎来到 🦌 DeerFlow，一个基于前沿语言模型构建的深度研究助手，帮助您搜索网络、浏览信息并处理复杂任务。"
+      "description": "欢迎来到 🦌 DeerFlow TS，一个 DeerFlow 的 TypeScript 版本，专注于深度研究与工具增强工作流。"
     },
     "conversationStarters": [
       "埃菲尔铁塔比世界最高建筑高多少倍？",
@@ -278,8 +279,8 @@
       "description": "通过我们的监督者 + 交接设计模式体验智能体团队合作。"
     },
     "joinCommunity": {
-      "title": "加入 DeerFlow 社区",
-      "description": "贡献精彩想法，塑造 DeerFlow 的未来。协作、创新并产生影响。",
+      "title": "加入 DeerFlow TS 社区",
+      "description": "参与 TypeScript 版本建设，同时关注原版 DeerFlow 上游项目并向其致敬。",
       "contributeNow": "立即贡献"
     }
   }

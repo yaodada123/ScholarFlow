@@ -1,26 +1,29 @@
-# 🦌 [About DeerFlow](https://github.com/bytedance/deer-flow)
+# 🦌 [About DeerFlow TS (Unofficial)](https://github.com/yaodada123/deer-flow-ts)
 
 > **From Open Source, Back to Open Source**
 
-**DeerFlow** (**D**eep **E**xploration and **E**fficient **R**esearch **Flow**) is a community-driven AI automation framework inspired by the remarkable contributions of the open source community. Our mission is to seamlessly integrate language models with specialized tools for tasks such as web search, crawling, and Python code execution—all while giving back to the community that made this innovation possible.
+**DeerFlow TS** is an unofficial TypeScript re-implementation that aims to keep the original Web UI compatible while migrating the server side to TypeScript.
+
+This project is built with great respect for the original **DeerFlow** and credits the upstream authors and community.
 
 ---
 
-## 🌟 GitHub Repository
+## 🌟 GitHub Repositories
 
-Explore DeerFlow on GitHub: [github.com/bytedance/deer-flow](https://github.com/bytedance/deer-flow)
+- DeerFlow TS (this repo): [github.com/yaodada123/deer-flow-ts](https://github.com/yaodada123/deer-flow-ts)
+- Original DeerFlow (upstream): [github.com/bytedance/deer-flow](https://github.com/bytedance/deer-flow)
 
 ---
 
 ## 📜 License
 
-DeerFlow is proudly open source and distributed under the **MIT License**.
+This UI and the TS implementation are distributed under the **MIT License**.
 
 ---
 
 ## 🙌 Acknowledgments
 
-We extend our heartfelt gratitude to the open source projects and contributors who have made DeerFlow a reality. We truly stand on the shoulders of giants.
+We extend our heartfelt gratitude to the open source projects and contributors who have made DeerFlow possible. We truly stand on the shoulders of giants.
 
 ### Core Frameworks
 - **[LangChain](https://github.com/langchain-ai/langchain)**: A phenomenal framework that powers our LLM interactions and chains.
@@ -28,18 +31,14 @@ We extend our heartfelt gratitude to the open source projects and contributors w
 - **[Next.js](https://nextjs.org/)**: A cutting-edge framework for building web applications.
 
 ### UI Libraries
-- **[Shadcn](https://ui.shadcn.com/)**: Minimalistic components that power our UI.
+- **[Shadcn](https://ui.shadcn.com/)**: Minimalistic components that power the UI.
 - **[Zustand](https://zustand.docs.pmnd.rs/)**: A stunning state management library.
 - **[Framer Motion](https://www.framer.com/motion/)**: An amazing animation library.
 - **[React Markdown](https://www.npmjs.com/package/react-markdown)**: Exceptional markdown rendering with customizability.
-- **[SToneX](https://github.com/stonexer)**: For his invaluable contribution to token-by-token visual effects.
-
-These outstanding projects form the backbone of DeerFlow and exemplify the transformative power of open source collaboration.
+- **[SToneX](https://github.com/stonexer)**: For invaluable contribution to token-by-token visual effects.
 
 ### Special Thanks
-Finally, we want to express our heartfelt gratitude to the core authors of `DeerFlow`:
+We want to express our heartfelt gratitude to the core authors of the original `DeerFlow`:
 
 - **[Daniel Walnut](https://github.com/hetaoBackend/)**
 - **[Henry Li](https://github.com/magiccube/)**
-
-Without their vision, passion and dedication, `DeerFlow` would not be what it is today.

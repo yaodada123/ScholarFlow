@@ -1,20 +1,23 @@
-# 🦌 [关于 DeerFlow](https://github.com/bytedance/deer-flow)
+# 🦌 [关于 DeerFlow TS（非官方）](https://github.com/yaodada123/deer-flow-ts)
 
 > **源于开源，回馈开源**
 
-**DeerFlow**（**深度探索**和**高效研究**流程）是一个由社区驱动的 AI 自动化框架，受到开源社区卓越贡献的启发。我们的使命是将语言模型与专业工具无缝集成，用于网络搜索、爬取和 Python 代码执行等任务——同时回馈使这种创新成为可能的社区。
+**DeerFlow TS** 是一个非官方的 TypeScript 重写版本，目标是在尽量保持原版 Web UI 兼容的前提下，将服务端迁移到 TypeScript，并逐步补齐原版能力。
+
+本项目对原版 **DeerFlow** 保持充分尊重，并向上游作者与社区致敬。
 
 ---
 
 ## 🌟 GitHub 仓库
 
-在 GitHub 上探索 DeerFlow：[github.com/bytedance/deer-flow](https://github.com/bytedance/deer-flow)
+- DeerFlow TS（本仓库）：[github.com/yaodada123/deer-flow-ts](https://github.com/yaodada123/deer-flow-ts)
+- 原版 DeerFlow（上游）：[github.com/bytedance/deer-flow](https://github.com/bytedance/deer-flow)
 
 ---
 
 ## 📜 软件许可证
 
-DeerFlow 作为开源项目，在 **MIT 许可证** 下分发。
+本 UI 与 TS 实现均在 **MIT 许可证** 下分发。
 
 ---
 
@@ -28,18 +31,14 @@ DeerFlow 作为开源项目，在 **MIT 许可证** 下分发。
 - **[Next.js](https://nextjs.org/)**：构建 Web 应用程序的前沿框架。
 
 ### UI 库
-- **[Shadcn](https://ui.shadcn.com/)**：支持我们 UI 的简约组件。
+- **[Shadcn](https://ui.shadcn.com/)**：支持 UI 的简约组件。
 - **[Zustand](https://zustand.docs.pmnd.rs/)**：令人惊叹的状态管理库。
 - **[Framer Motion](https://www.framer.com/motion/)**：出色的动画库。
 - **[React Markdown](https://www.npmjs.com/package/react-markdown)**：具有可定制性的卓越 markdown 渲染。
 - **[SToneX](https://github.com/stonexer)**：感谢他对逐字符视觉效果的宝贵贡献。
 
-这些杰出的项目构成了 DeerFlow 的骨干，体现了开源协作的变革力量。
-
 ### 特别感谢
-最后，我们要向 `DeerFlow` 的核心作者表达衷心的感谢：
+我们要向原版 `DeerFlow` 的核心作者表达衷心的感谢：
 
 - **[Daniel Walnut](https://github.com/hetaoBackend/)**
 - **[Henry Li](https://github.com/magiccube/)**
-
-没有他们的愿景、热情和奉献，`DeerFlow` 就不会有今天的成就。
