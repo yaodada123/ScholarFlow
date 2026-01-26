@@ -1,5 +1,7 @@
 # DeerFlow TS（非官方）
 
+[English](./README.md) | [简体中文](./README_zh.md) | [日本語](./README_ja.md) | [Deutsch](./README_de.md) | [Español](./README_es.md) | [Русский](./README_ru.md) | [Portuguese](./README_pt.md)
+
 > 本项目是对字节跳动开源项目 **DeerFlow** 的 TypeScript 重写与接口兼容实现，目标是让原版 Web UI 在不改/少改的情况下，切换到 TS 服务端。
 
 - 原版（致敬）：https://github.com/bytedance/deer-flow
