@@ -1,9 +1,0 @@
-请勿删除或移动该文件夹以及其下的所有文件，防止App功能异常或者数据丢失。每个文件/文件夹的介绍如下：
-1. /icons：剪切板数据的来源App的Logo
-2. /tempFiles：剪切板上的图片资源
-3. data.sqlite：剪切板的数据库
-4. reply.sqlite：快捷回复的数据库
-5. config.data：App偏好设置（iCloud云盘）
-6. hotkeyBlackList.data：快捷键操作黑名单（iCloud云盘）
-7. pasteBlackList.data：剪切板监听黑名单（iCloud云盘）
-8. backup_date：iCloud上次备份的时间（iCloud云盘）
