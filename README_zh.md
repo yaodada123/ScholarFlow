@@ -5,6 +5,12 @@
 - 原版（致敬）：https://github.com/bytedance/deer-flow
 - 本仓库定位：面向工程化与可维护性的 TS 端实现，逐步补齐原版能力
 
+## 演示
+
+### 视频
+
+<https://github.com/user-attachments/assets/ca57489b-4022-434e-98b0-ac593f1b55f8>
+
 ## 现状（能力概览）
 
 - 服务端与协议
