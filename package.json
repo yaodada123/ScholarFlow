@@ -8,6 +8,9 @@
   },
   "scripts": {
     "dev": "ENABLE_MCP_SERVER_CONFIGURATION=true tsx watch src/server/app.ts",
+    "dev:server": "ENABLE_MCP_SERVER_CONFIGURATION=true tsx watch src/server/app.ts",
+    "dev:web": "npm --prefix web run dev",
+    "dev:all": "bash -lc 'trap \"kill 0\" EXIT; npm run dev:server & npm run dev:web'",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server/app.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
