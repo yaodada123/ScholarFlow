@@ -13,36 +13,36 @@
     "noResult": "No result"
   },
   "messageInput": {
-    "placeholder": "What can I do for you?",
-    "placeholderWithRag": "What can I do for you? \nYou may refer to RAG resources by using @."
+    "placeholder": "Ask a research question or describe what you want to investigate.",
+    "placeholderWithRag": "Ask a research question.\nUse @ to reference uploaded papers, notes, or research materials."
   },
   "header": {
-    "title": "DeerFlow TS"
+    "title": "ScholarFlow"
   },
   "hero": {
-    "title": "Deep Research",
-    "subtitle": "at Your Fingertips",
-    "description": "Meet DeerFlow TS, your personal Deep Research assistant. With powerful tools like search engines, web crawlers, Python and MCP services, it delivers instant insights, comprehensive reports, and even captivating podcasts.",
-    "footnote": "* DEER stands for Deep Exploration and Efficient Research."
+    "title": "Academic Research",
+    "subtitle": "with Evidence",
+    "description": "Meet ScholarFlow, a multi-agent academic research assistant. It helps plan research questions, retrieve evidence from local materials and web sources, and generate structured reports.",
+    "footnote": "* ScholarFlow focuses on plan-first, evidence-aware research workflows."
   },
   "settings": {
-    "title": "DeerFlow Settings",
-    "description": "Manage your DeerFlow settings here.",
+    "title": "ScholarFlow Settings",
+    "description": "Manage your ScholarFlow research workflow settings here.",
     "addServers": "Add Servers",
     "cancel": "Cancel",
     "addNewMCPServers": "Add New MCP Servers",
-    "mcpConfigDescription": "DeerFlow uses the standard JSON MCP config to create a new server.",
+    "mcpConfigDescription": "ScholarFlow uses the standard JSON MCP config to create a new server.",
     "pasteConfigBelow": "Paste your config below and click \"Add\" to add new servers.",
     "rag": {
-      "title": "Resources",
-      "description": "Manage your knowledge base resources here. Upload markdown or text files to be indexed for retrieval.",
+      "title": "Academic Materials",
+      "description": "Manage your research materials here. Upload Markdown or text files such as papers, notes, and course materials for retrieval.",
       "upload": "Upload",
       "uploading": "Uploading...",
       "uploadSuccess": "File uploaded successfully",
       "uploadFailed": "Failed to upload file",
       "emptyFile": "Cannot upload an empty file",
       "loading": "Loading resources...",
-      "noResources": "No resources found. Upload a file to get started."
+      "noResources": "No academic materials found. Upload a file to get started."
     },
     "add": "Add",
     "general": {
@@ -62,7 +62,7 @@
     },
     "mcp": {
       "title": "MCP Servers",
-      "description": "The Model Context Protocol boosts DeerFlow by integrating external tools for tasks like private domain searches, web browsing, food ordering, and more. Click here to",
+      "description": "The Model Context Protocol can extend ScholarFlow with external academic tools, private knowledge sources, browsers, and custom services. Click here to",
       "learnMore": "learn more about MCP.",
       "enableDisable": "Enable/disable server",
       "deleteServer": "Delete server",
@@ -96,46 +96,46 @@
     }
   },
   "footer": {
-    "quote": "Originated from Open Source, give back to Open Source.",
+    "quote": "Plan research, retrieve evidence, write grounded reports.",
     "license": "Licensed under MIT License",
-    "copyright": "DeerFlow TS"
+    "copyright": "ScholarFlow"
   },
   "chat": {
     "page": {
-      "loading": "Loading DeerFlow TS...",
+      "loading": "Preparing your research workspace...",
       "welcomeUser": "Welcome, {username}",
-      "starOnGitHub": "Star DeerFlow TS on GitHub"
+      "starOnGitHub": "Star ScholarFlow on GitHub"
     },
     "welcome": {
       "greeting": "👋 Hello, there!",
-      "description": "Welcome to 🦌 DeerFlow TS, a TypeScript edition of DeerFlow focused on deep research and tool-augmented workflows."
+      "description": "Welcome to 📚 ScholarFlow, a TypeScript academic research assistant for plan-first, tool-augmented, evidence-aware workflows."
     },
     "conversationStarters": [
-      "How many times taller is the Eiffel Tower than the tallest building in the world?",
-      "How many years does an average Tesla battery last compared to a gasoline engine?",
-      "How many liters of water are required to produce 1 kg of beef?",
-      "How many times faster is the speed of light compared to the speed of sound?"
+      "Summarize the key ideas of retrieval-augmented generation from my uploaded notes.",
+      "Create a literature review plan for multi-agent research assistants.",
+      "Compare the main limitations of Transformer attention mechanisms.",
+      "Help me draft a research report outline about LLM hallucination mitigation."
     ],
     "inputBox": {
       "deepThinking": "Deep Thinking",
       "deepThinkingTooltip": {
         "title": "Deep Thinking Mode: {status}",
-        "description": "When enabled, DeerFlow will use reasoning model ({model}) to generate more thoughtful plans."
+        "description": "When enabled, ScholarFlow will use reasoning model ({model}) to generate more thoughtful research plans."
       },
       "investigation": "Investigation",
       "investigationTooltip": {
         "title": "Investigation Mode: {status}",
-        "description": "When enabled, DeerFlow will perform a quick search before planning. This is useful for researches related to ongoing events and news."
+        "description": "When enabled, ScholarFlow will perform a quick background search before planning. This is useful for academic topics that need recent context."
       },
       "enhancePrompt": "Enhance prompt with AI",
       "on": "On",
       "off": "Off"
     },
     "research": {
-      "deepResearch": "Deep Research",
-      "researching": "Researching...",
-      "generatingReport": "Generating report...",
-      "reportGenerated": "Report generated",
+      "deepResearch": "Academic Research",
+      "researching": "Researching evidence...",
+      "generatingReport": "Generating research report...",
+      "reportGenerated": "Research report generated",
       "open": "Open",
       "close": "Close",
       "deepThinking": "Deep Thinking",
@@ -157,7 +157,7 @@
       "runningPythonCode": "Running Python code",
       "errorExecutingCode": "Error when executing the above code",
       "executionOutput": "Execution output",
-      "retrievingDocuments": "Retrieving documents from RAG",
+      "retrievingDocuments": "Retrieving academic materials from RAG",
       "running": "Running",
       "generatingPodcast": "Generating podcast...",
       "nowPlayingPodcast": "Now playing podcast...",
@@ -192,9 +192,9 @@
     },
     "messages": {
       "replaying": "Replaying",
-      "replayDescription": "DeerFlow is now replaying the conversation...",
+      "replayDescription": "ScholarFlow is now replaying the conversation...",
       "replayHasStopped": "The replay has been stopped.",
-      "replayModeDescription": "You're now in DeerFlow's replay mode. Click the \"Play\" button on the right to start.",
+      "replayModeDescription": "You are now in ScholarFlow replay mode. Click the \"Play\" button on the right to start.",
       "play": "Play",
       "fastForward": "Fast Forward",
       "demoNotice": "* This site is for demo purposes only. If you want to try your own question, please",
@@ -211,54 +211,38 @@
   "landing": {
     "caseStudies": {
       "title": "Case Studies",
-      "description": "See DeerFlow in action through replays.",
+      "description": "See ScholarFlow research workflows through replays.",
       "clickToWatch": "Click to watch replay",
       "cases": [
         {
-          "title": "How tall is Eiffel Tower compared to tallest building?",
-          "description": "The research compares the heights and global significance of the Eiffel Tower and Burj Khalifa, and uses Python code to calculate the multiples."
+          "title": "Create a literature review plan for RAG systems",
+          "description": "The workflow decomposes a broad research topic into background, key methods, limitations, and evaluation dimensions."
         },
         {
-          "title": "What are the top trending repositories on GitHub?",
-          "description": "The research utilized MCP services to identify the most popular GitHub repositories and documented them in detail using search engines."
+          "title": "Compare multi-agent research assistant architectures",
+          "description": "The report analyzes planner-researcher-reporter workflows, human-in-the-loop controls, and observability trade-offs."
         },
         {
-          "title": "Write an article about Nanjing's traditional dishes",
-          "description": "The study vividly showcases Nanjing's famous dishes through rich content and imagery, uncovering their hidden histories and cultural significance."
+          "title": "Summarize uploaded Transformer attention notes",
+          "description": "The research uses local notes as evidence and produces a structured explanation with limitations and follow-up questions."
         },
         {
-          "title": "How to decorate a small rental apartment?",
-          "description": "The study provides readers with practical and straightforward methods for decorating apartments, accompanied by inspiring images."
-        },
-        {
-          "title": "Introduce the movie 'Léon: The Professional'",
-          "description": "The research provides a comprehensive introduction to the movie 'Léon: The Professional', including its plot, characters, and themes."
-        },
-        {
-          "title": "How do you view the takeaway war in China? (in Chinese)",
-          "description": "The research analyzes the intensifying competition between JD and Meituan, highlighting their strategies, technological innovations, and challenges."
-        },
-        {
-          "title": "Are ultra-processed foods linked to health?",
-          "description": "The research examines the health risks of rising ultra-processed food consumption, urging more research on long-term effects and individual differences."
-        },
-        {
-          "title": "Write an article on \"Would you insure your AI twin?\"",
-          "description": "The research explores the concept of insuring AI twins, highlighting their benefits, risks, ethical considerations, and the evolving regulatory."
+          "title": "Draft a report outline about hallucination mitigation",
+          "description": "The plan collects evidence about RAG, citation grounding, verification, and evaluation metrics before drafting a report."
         }
       ]
     },
     "coreFeatures": {
       "title": "Core Features",
-      "description": "Find out what makes DeerFlow effective.",
+      "description": "Find out what makes ScholarFlow useful for academic research.",
       "features": [
         {
           "name": "Dive Deeper and Reach Wider",
-          "description": "Unlock deeper insights with advanced tools. Our powerful search + crawling and Python tools gathers comprehensive data, delivering in-depth reports to enhance your study."
+          "description": "Retrieve evidence from local academic materials and optional web sources, then synthesize findings into structured reports."
         },
         {
           "name": "Human-in-the-loop",
-          "description": "Refine your research plan, or adjust focus areas all through simple natural language."
+          "description": "Review and refine the research plan before execution using simple natural language."
         },
         {
           "name": "Lang Stack",
@@ -266,21 +250,21 @@
         },
         {
           "name": "MCP Integrations",
-          "description": "Supercharge your research workflow and expand your toolkit with seamless MCP integrations."
+          "description": "Extend the academic research workflow with MCP tools and private knowledge sources."
         },
         {
           "name": "Podcast Generation",
-          "description": "Instantly generate podcasts from reports. Perfect for on-the-go learning or sharing findings effortlessly."
+          "description": "Generate audio summaries from reports for review, sharing, or on-the-go learning."
         }
       ]
     },
     "multiAgent": {
       "title": "Multi-Agent Architecture",
-      "description": "Experience the agent teamwork with our Supervisor + Handoffs design pattern."
+      "description": "Experience agent teamwork across planning, evidence retrieval, synthesis, and reporting."
     },
     "joinCommunity": {
-      "title": "Join the DeerFlow TS Community",
-      "description": "Contribute to the TypeScript edition, and follow the original DeerFlow upstream for the source of inspiration.",
+      "title": "Build ScholarFlow",
+      "description": "Contribute to a TypeScript academic Research Agent focused on controllable, evidence-aware workflows.",
       "contributeNow": "Contribute Now"
     }
   }

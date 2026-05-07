@@ -91,9 +91,9 @@ function isLikelyChitChat(userText: string): boolean {
 
 function defaultChitChatReply(params: { locale: string; userText: string }): string {
   if (isChineseLocale(params.locale)) {
-    return "你好！我在这里。你想聊点什么，还是需要我帮你做检索/分析/写作？";
+    return "你好！我是 ScholarFlow，一个学术研究助手。你可以给我一个研究问题，或上传论文/笔记让我帮你规划研究、整理证据并生成报告。";
   }
-  return "Hi! How can I help you today?";
+  return "Hi! I'm ScholarFlow, an academic research assistant. Share a research question or upload papers/notes, and I can help plan the research, retrieve evidence, and draft a structured report.";
 }
 
 function tryParseJsonObject(text: string): Record<string, unknown> | null {
@@ -146,9 +146,9 @@ async function decideCoordinatorAction(params: {
   }
 
   const system =
-    "You are DeerFlow Coordinator. Decide whether to respond directly or hand off to the planner. " +
+    "You are ScholarFlow Coordinator, an academic research assistant. Decide whether to respond directly or hand off to the planner. " +
     "You MUST respond directly for greetings, small talk, identity/capability questions (e.g., 'who are you', 'what can you do'). " +
-    "You MUST hand off for research/factual/information requests. " +
+    "You MUST hand off for academic research, literature review, factual analysis, source-grounded writing, or information requests. " +
     'Output ONLY valid JSON (no markdown). Schema: {"action":"direct_response"|"handoff_to_planner","message"?:string}. ' +
     "When action=direct_response, message is required and must be in the user's language.";
 
@@ -306,8 +306,8 @@ export async function* runChatWorkflow(params: {
     if (s.resources.length > 0) {
       const coordinatorId = newMessageId();
       const content = isChineseLocale(s.locale)
-        ? "收到。我会先制定一个研究计划，然后开始检索与撰写报告。"
-        : "Got it. I'll draft a research plan first, then gather sources and write up the report.";
+        ? "收到。我会先制定一个学术研究计划，然后检索相关资料并撰写结构化研究报告。"
+        : "Got it. I'll draft an academic research plan first, then retrieve evidence and write a structured research report.";
 
       emit(config, {
         type: "message_chunk",
@@ -366,8 +366,8 @@ export async function* runChatWorkflow(params: {
     }
 
     const content = isChineseLocale(s.locale)
-      ? "收到。我会先制定一个研究计划，然后开始检索与撰写报告。"
-      : "Got it. I'll draft a research plan first, then gather sources and write up the report.";
+      ? "收到。我会先制定一个学术研究计划，然后检索相关资料并撰写结构化研究报告。"
+      : "Got it. I'll draft an academic research plan first, then retrieve evidence and write a structured research report.";
 
     emit(config, {
       type: "message_chunk",
@@ -846,7 +846,7 @@ export async function* runChatWorkflow(params: {
         observations.length ? observations.join("\n\n") : "(none)",
         "",
         "## Answer",
-        "LLM is not configured. Set BASIC_MODEL__model and BASIC_MODEL__api_key to enable full reporting.",
+        "LLM is not configured. Set BASIC_MODEL__MODEL and BASIC_MODEL__API_KEY to enable full academic report generation.",
       ].join("\n");
 
       emit(config, {

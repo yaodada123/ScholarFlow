@@ -5,33 +5,33 @@ export const playbook = {
   steps: [
     {
       description:
-        "The Coordinator is responsible for engaging with the user to understand their problem and requirements.",
+        "The Coordinator understands the user's academic question and decides whether a research workflow is needed.",
       activeNodes: ["Start", "Coordinator"],
       activeEdges: ["Start->Coordinator"],
       tooltipPosition: "right",
     },
     {
       description:
-        "If the user's problem is clearly defined, the Coordinator will hand it over to the Planner.",
+        "If the research question is clear, the Coordinator hands it over to the Planner.",
       activeNodes: ["Coordinator", "Planner"],
       activeEdges: ["Coordinator->Planner"],
       tooltipPosition: "left",
     },
     {
-      description: "Awaiting human feedback to refine the plan.",
+      description: "Awaiting human feedback to refine the academic research plan.",
       activeNodes: ["Planner", "HumanFeedback"],
       activeEdges: ["Planner->HumanFeedback"],
       tooltipPosition: "left",
     },
     {
-      description: "Updating the plan based on human feedback.",
+      description: "Updating the research plan based on human feedback.",
       activeNodes: ["HumanFeedback", "Planner"],
       activeEdges: ["HumanFeedback->Planner"],
       tooltipPosition: "left",
     },
     {
       description:
-        "The Research Team is responsible for conducting the core research tasks.",
+        "The Research Team conducts evidence collection and synthesis for the research question.",
       activeNodes: ["Planner", "HumanFeedback", "ResearchTeam"],
       activeEdges: [
         "Planner->HumanFeedback",
@@ -42,35 +42,35 @@ export const playbook = {
     },
     {
       description:
-        "The Researcher is responsible for gathering information using search and crawling tools.",
+        "The Researcher retrieves local academic materials and optional web evidence.",
       activeNodes: ["ResearchTeam", "Researcher"],
       activeEdges: ["ResearchTeam->Researcher", "Researcher->ResearchTeam"],
       tooltipPosition: "left",
     },
     {
       description:
-        "The Coder is responsible for writing Python code to solve math problems, data analysis, and more.",
+        "The Coder can support quantitative checks, data analysis, or reproducible research tasks.",
       tooltipPosition: "right",
       activeNodes: ["ResearchTeam", "Coder"],
       activeEdges: ["ResearchTeam->Coder", "Coder->ResearchTeam"],
     },
     {
       description:
-        "Once the research tasks are completed, the Researcher will hand over to the Planner.",
+        "Once evidence collection is completed, the Researcher hands findings back to the Planner.",
       activeNodes: ["ResearchTeam", "Planner"],
       activeEdges: ["ResearchTeam->Planner"],
       tooltipPosition: "left",
     },
     {
       description:
-        "If no additional information is required, the Planner will handoff to the Reporter.",
+        "If no additional evidence is required, the Planner hands off to the Reporter.",
       activeNodes: ["Reporter", "Planner"],
       activeEdges: ["Planner->Reporter"],
       tooltipPosition: "right",
     },
     {
       description:
-        "The Reporter will prepare a report summarizing the results.",
+        "The Reporter synthesizes evidence into a structured academic research report.",
       activeNodes: ["End", "Reporter"],
       activeEdges: ["Reporter->End"],
       tooltipPosition: "bottom",

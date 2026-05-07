@@ -15,9 +15,9 @@ import { env } from "~/env";
 import { Toaster } from "../components/deer-flow/toaster";
 
 export const metadata: Metadata = {
-  title: "🦌 DeerFlow TS",
+  title: "ScholarFlow",
   description:
-    "DeerFlow TS is an unofficial TypeScript edition of DeerFlow, combining language models with specialized tools for research tasks.",
+    "ScholarFlow is a multi-agent academic research assistant for planning research, retrieving evidence, and generating structured reports.",
   icons: [{ rel: "icon", url: "/favicon.ico" }],
 };
 

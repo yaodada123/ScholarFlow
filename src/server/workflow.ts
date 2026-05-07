@@ -27,39 +27,41 @@ export function buildFallbackPlan(params: {
 
   if (maxSteps >= 1) {
     steps.push({
-      title: "Clarify scope & success criteria",
-      description: query ? `Define success for: ${query}` : "Define success criteria.",
+      title: "Clarify the research question",
+      description: query
+        ? `Define the academic scope, key concepts, and expected outcome for: ${query}`
+        : "Define the academic scope, key concepts, and expected outcome.",
       tools: [],
     });
   }
   if (maxSteps >= 2) {
     steps.push({
-      title: "Collect key sources",
+      title: "Collect academic evidence",
       description: enableWebSearch
-        ? "Search primary sources and reputable references."
-        : "Use provided resources and general knowledge.",
+        ? "Search provided materials and reputable web references for relevant evidence."
+        : "Use provided papers, notes, and research materials as the evidence base.",
       tools: enableWebSearch ? ["web_search"] : [],
     });
   }
   if (maxSteps >= 3) {
     steps.push({
-      title: "Synthesize findings",
-      description: "Extract key points, resolve conflicts, and form conclusions.",
+      title: "Synthesize findings and limitations",
+      description: "Extract key findings, compare perspectives, identify limitations, and form evidence-based conclusions.",
       tools: [],
     });
   }
   if (maxSteps >= 4) {
     steps.push({
-      title: "Draft report",
-      description: "Write a structured report with concise sections and citations if available.",
+      title: "Draft academic research report",
+      description: "Write a structured report with research question, evidence, discussion, limitations, and citations if available.",
       tools: [],
     });
   }
 
   return {
-    title: query ? `Research plan: ${query}` : "Research plan",
+    title: query ? `Academic research plan: ${query}` : "Academic research plan",
     thought:
-      "I will scope the task, gather sources (optionally via web search), synthesize findings, and write a clear report.",
+      "I will clarify the research question, gather academic evidence, synthesize findings and limitations, and write a structured research report.",
     steps,
   };
 }
@@ -73,7 +75,8 @@ export function buildPlannerPrompt(params: {
 }): { system: string; user: string } {
   const { query, locale, maxSteps, enableWebSearch, backgroundInvestigationResults } = params;
 
-  const system = "You are DeerFlow Planner. Output ONLY valid JSON (no markdown, no commentary).";
+  const system =
+    "You are ScholarFlow Planner, an academic research planning agent. Output ONLY valid JSON (no markdown, no commentary).";
 
   const background = backgroundInvestigationResults
     ? `\n\nBackground investigation results:\n${backgroundInvestigationResults}`
@@ -81,7 +84,7 @@ export function buildPlannerPrompt(params: {
 
   const user =
     `Locale: ${locale}\n` +
-    "Task: Create a research plan for the user query.\n" +
+    "Task: Create an academic research plan for the user query.\n" +
     `Constraints: max_step_num=${maxSteps}, enable_web_search=${enableWebSearch}\n` +
     "JSON schema:\n" +
     "{\n" +
@@ -115,7 +118,8 @@ export function buildPlannerEditPrompt(params: {
     backgroundInvestigationResults,
   } = params;
 
-  const system = "You are DeerFlow Planner. Output ONLY valid JSON (no markdown, no commentary).";
+  const system =
+    "You are ScholarFlow Planner, an academic research planning agent. Output ONLY valid JSON (no markdown, no commentary).";
 
   const background = backgroundInvestigationResults
     ? `\n\nBackground investigation results:\n${backgroundInvestigationResults}`
@@ -144,7 +148,8 @@ export function buildReporterPrompt(params: {
   const { query, locale, style, plan, observations, sources } = params;
 
   const system =
-    "You are DeerFlow Reporter. Write a high-quality markdown report. Include citations when sources are provided.";
+    "You are ScholarFlow Reporter, an academic research writing agent. Write a high-quality markdown research report. " +
+    "Ground claims in the provided observations and sources, include citations when sources are provided, and explicitly note limitations when evidence is incomplete.";
 
   const sourcesText = sources.length
     ? sources.map((s, i) => `- [${i + 1}] ${s.title} (${s.uri})`).join("\n")
@@ -157,7 +162,7 @@ export function buildReporterPrompt(params: {
     `Plan (JSON):\n${JSON.stringify(plan, null, 2)}\n\n` +
     `Observations:\n${observations.length ? observations.join("\n\n") : "(none)"}\n\n` +
     `Sources:\n${sourcesText}\n\n` +
-    "Return markdown only.";
+    "Return markdown only. Prefer sections such as Research Question, Key Findings, Evidence, Discussion, Limitations, and Further Reading when appropriate.";
 
   return { system, user };
 }

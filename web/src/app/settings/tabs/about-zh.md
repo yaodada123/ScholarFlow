@@ -1,44 +1,42 @@
-# 🦌 [关于 DeerFlow TS（非官方）](https://github.com/yaodada123/deer-flow-ts)
+# 📚 关于 ScholarFlow
 
-> **源于开源，回馈开源**
+> **面向学术研究工作流的多智能体助手**
 
-**DeerFlow TS** 是一个非官方的 TypeScript 重写版本，目标是在尽量保持原版 Web UI 兼容的前提下，将服务端迁移到 TypeScript，并逐步补齐原版能力。
+**ScholarFlow** 是一个基于 TypeScript 的学术 Research Agent，帮助用户将研究问题转化为结构化计划，结合本地资料或可选 Web Search 检索证据，并生成 Markdown 研究报告。
 
-本项目对原版 **DeerFlow** 保持充分尊重，并向上游作者与社区致敬。
+项目重点是构建可控、可观察的 Agent 工作流：先规划再执行，先审阅再研究，展示工具调用过程，并围绕证据生成报告。
 
 ---
 
-## 🌟 GitHub 仓库
+## 🌟 项目重点
 
-- DeerFlow TS（本仓库）：[github.com/yaodada123/deer-flow-ts](https://github.com/yaodada123/deer-flow-ts)
-- 原版 DeerFlow（上游）：[github.com/bytedance/deer-flow](https://github.com/bytedance/deer-flow)
+- 多智能体工作流：Coordinator、Planner、Researcher、Reporter
+- Human-in-the-loop 计划审阅和编辑
+- 本地学术 RAG，支持 Markdown/TXT 论文、笔记和课程资料
+- 可选 Web Search，用于背景调研
+- SSE 流式输出，实时展示 Agent 消息和工具调用
+- OpenAI-compatible 模型抽象，便于切换不同 LLM 服务
 
 ---
 
 ## 📜 软件许可证
 
-本 UI 与 TS 实现均在 **MIT 许可证** 下分发。
+本 UI 与 TypeScript 实现均在 **MIT 许可证** 下分发。
 
 ---
 
 ## 🙌 致谢
 
-我们衷心感谢使 DeerFlow 成为现实的开源项目和贡献者。我们真正站在巨人的肩膀上。
+ScholarFlow 基于开源 LLM 生态构建，并受到 Deep Research 类 Agent 产品形态的启发。
 
 ### 核心框架
-- **[LangChain](https://github.com/langchain-ai/langchain)**：支持我们 LLM 交互和链的卓越框架。
-- **[LangGraph](https://github.com/langchain-ai/langgraph)**：实现复杂的多智能体编排。
-- **[Next.js](https://nextjs.org/)**：构建 Web 应用程序的前沿框架。
+- **[LangChain](https://github.com/langchain-ai/langchain)**：提供 LLM 交互基础能力。
+- **[LangGraph](https://github.com/langchain-ai/langgraph)**：支持多智能体工作流编排。
+- **[Next.js](https://nextjs.org/)**：用于构建 Web 应用。
 
 ### UI 库
-- **[Shadcn](https://ui.shadcn.com/)**：支持 UI 的简约组件。
-- **[Zustand](https://zustand.docs.pmnd.rs/)**：令人惊叹的状态管理库。
-- **[Framer Motion](https://www.framer.com/motion/)**：出色的动画库。
-- **[React Markdown](https://www.npmjs.com/package/react-markdown)**：具有可定制性的卓越 markdown 渲染。
-- **[SToneX](https://github.com/stonexer)**：感谢他对逐字符视觉效果的宝贵贡献。
-
-### 特别感谢
-我们要向原版 `DeerFlow` 的核心作者表达衷心的感谢：
-
-- **[Daniel Walnut](https://github.com/hetaoBackend/)**
-- **[Henry Li](https://github.com/magiccube/)**
+- **[Shadcn](https://ui.shadcn.com/)**：简洁的 UI 组件。
+- **[Zustand](https://zustand.docs.pmnd.rs/)**：状态管理。
+- **[Framer Motion](https://www.framer.com/motion/)**：动画能力。
+- **[React Markdown](https://www.npmjs.com/package/react-markdown)**：Markdown 渲染。
+- **[SToneX](https://github.com/stonexer)**：逐字符视觉效果。

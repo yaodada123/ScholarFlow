@@ -1,11 +1,10 @@
-# DeerFlow TS (Unofficial)
+# ScholarFlow
 
 [English](./README.md) | [简体中文](./README_zh.md) | [日本語](./README_ja.md) | [Deutsch](./README_de.md) | [Español](./README_es.md) | [Русский](./README_ru.md) | [Portuguese](./README_pt.md)
 
-This repository is an **unofficial TypeScript re-implementation** of ByteDance’s open-source project **DeerFlow**, aiming to switch the server side to TypeScript while keeping the original Web UI working with zero/minimal changes.
+**ScholarFlow** is a multi-agent academic research assistant built with TypeScript, Fastify, LangGraph, and Next.js.
 
-- Original project (credits): https://github.com/bytedance/deer-flow
-- This repo: a more engineering-oriented TS server, gradually catching up with the original features
+It helps users turn research questions into structured research plans, retrieve evidence from local academic materials or optional web sources, and generate grounded Markdown research reports. The project focuses on a controllable, observable, and human-in-the-loop research workflow rather than a generic one-shot chatbot.
 
 ## Demo
 
@@ -15,27 +14,29 @@ This repository is an **unofficial TypeScript re-implementation** of ByteDance�
 
 ## Current Status (Capabilities)
 
+- Academic research workflow
+  - Coordinator: decides direct response vs. academic research workflow
+  - Planner: produces a structured research plan for the user's research question
+  - Human feedback: lets users review, accept, or edit the plan before execution
+  - Researcher: retrieves local notes/papers and optional web evidence, then accumulates observations
+  - Reporter: generates a structured Markdown research report based on the plan, evidence, and sources
 - Server & protocol
   - Fastify + TypeScript (ESM)
   - SSE streaming endpoint: `POST /api/chat/stream`
   - Config endpoint: `GET /api/config` (returns models and `rag.provider`)
-- Multi-agent workflow (Planning + Research)
-  - Coordinator: decides direct chat vs. research workflow
-  - Planner: produces a structured research plan (supports human feedback edits / auto-accept)
-  - Researcher: runs retrieval (local RAG / optional Web Search) and accumulates Observations
-  - Reporter: generates the final Markdown report based on the plan and observations (supports report style)
-- Local RAG (minimal working loop)
+- Local academic RAG (minimal working loop)
   - Upload: `POST /api/rag/upload` (only `.md` / `.txt`)
   - List/search: `GET /api/rag/resources?query=`
-  - Reference: select resources via `@` in the input box, URI format `rag://local/<file>`
-  - Retrieval injection: reads an excerpt from `data/rag/<file>` and injects it into the workflow
+  - Reference: select papers, notes, or research materials via `@` in the input box
+  - Resource URI format: `rag://local/<file>`
+  - Retrieval injection: reads an excerpt from `data/rag/<file>` and injects it into the research workflow
 - Web Search (optional)
   - Integrated Tavily (enabled when `TAVILY_API_KEY` is set)
   - Controlled via the frontend toggle `enable_web_search`
-- MCP (compat placeholder)
-  - `POST /api/mcp/server/metadata` (for the frontend settings page)
+- MCP (configuration placeholder)
+  - `POST /api/mcp/server/metadata` (for frontend settings integration)
 
-> Note: this is still “WIP”. The current priority is Web UI compatibility and a closed-loop core workflow.
+> Note: the current version prioritizes an end-to-end academic research loop: plan, retrieve, synthesize, and report. RAG quality, citation grounding, and external academic search integrations are planned improvements.
 
 ## Quick Start
 
@@ -96,9 +97,10 @@ npm run dev:web
 
 ## Project Layout
 
-- `src/server/`: TypeScript backend
-- `data/rag/`: local RAG file storage (uploads go here)
-- `web/`: original Web UI (compat target)
+- `src/server/`: TypeScript backend and academic research workflow implementation
+- `data/rag/`: local academic material storage (uploaded Markdown/TXT files go here)
+- `web/`: Next.js web interface
+- `docs/academic-agent-interview-packaging.md`: interview positioning and project explanation notes
 
 ## Common Config (Environment Variables)
 
@@ -112,11 +114,13 @@ npm run dev:web
 
 ## Roadmap
 
-- More complete RAG: chunking, indexing, vector retrieval/reranking, resource management (delete/rename/download)
-- More complete MCP: tool discovery, tool calling, deeper workflow integration
-- More API compatibility with the original (evaluation, podcast, prompt enhancer, etc.)
-- Improve English docs and add more translations
+- Academic RAG upgrades: chunking, indexing, vector retrieval, reranking, and metadata filtering
+- PDF paper ingestion, section-aware parsing, and bibliography extraction
+- Citation grounding: bind report claims to concrete source excerpts
+- Academic search tools: arXiv, Semantic Scholar, CrossRef, BibTeX workflows
+- Evaluation suite for plan quality, evidence coverage, citation accuracy, and hallucination risk
+- More complete MCP tool discovery and workflow integration
 
-## Disclaimer
+## Acknowledgments
 
-- This is an unofficial implementation and is not affiliated with the original authors/maintainers. If anything is inappropriate, please contact me.
+ScholarFlow is inspired by modern deep-research style agents and the broader open-source LLM ecosystem. It is built as a TypeScript engineering implementation focused on academic research workflows.

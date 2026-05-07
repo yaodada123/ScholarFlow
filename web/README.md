@@ -1,26 +1,26 @@
-# 🦌 DeerFlow Web UI
+# ScholarFlow Web UI
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-> Originated from Open Source, give back to Open Source.
+ScholarFlow Web UI is the Next.js interface for **ScholarFlow**, a multi-agent academic research assistant.
 
-This is the web UI for [`DeerFlow`](https://github.com/bytedance/deer-flow).
+It helps users submit research questions, attach local academic materials, review generated research plans, observe tool calls in real time, and read structured Markdown research reports.
 
 ## Quick Start
 
 ### Prerequisites
 
-- [`DeerFlow`](https://github.com/bytedance/deer-flow)
-- Node.js (v22.14.0+)
-- pnpm (v10.6.2+) as package manager
+- ScholarFlow backend service
+- Node.js (v22.14.0+ recommended)
+- pnpm (v10.6.2+) or npm
 
 ### Configuration
 
-Create a `.env` file in the project root and configure the following environment variables:
+Create a `.env` file in the project root and configure the following environment variable:
 
-- `NEXT_PUBLIC_API_URL`: The URL of the deer-flow API.
+- `NEXT_PUBLIC_API_URL`: The URL of the ScholarFlow API.
 
-It's always a good idea to start with the given example file, and edit the `.env` file with your own values:
+It's usually best to start with the example file and edit it with your own values:
 
 ```bash
 cp .env.example .env
@@ -28,18 +28,21 @@ cp .env.example .env
 
 ## How to Install
 
-DeerFlow Web UI uses `pnpm` as its package manager.
-To install the dependencies, run:
-
 ```bash
 cd web
 pnpm install
 ```
 
+or, if you use npm:
+
+```bash
+cd web
+npm install
+```
+
 ## How to Run in Development Mode
 
-> [!NOTE]
-> Ensure the Python API service is running before starting the web UI.
+Ensure the TypeScript API service is running before starting the web UI.
 
 Start the web UI development server:
 
@@ -50,7 +53,7 @@ pnpm dev
 
 By default, the web UI will be available at `http://localhost:3000`.
 
-You can set the `NEXT_PUBLIC_API_URL` environment variable if you're using a different host or location.
+You can set the `NEXT_PUBLIC_API_URL` environment variable if you're using a different backend location.
 
 ```ini
 # .env
@@ -61,33 +64,27 @@ NEXT_PUBLIC_API_URL=http://localhost:8000/api
 
 You can also run this project with Docker.
 
-First, you need read the [configuration](#configuration) below. Make sure `.env` file is ready.
+First, make sure your `.env` file is ready.
 
-Second, to build a Docker image of your own web server:
+Then build a Docker image:
 
 ```bash
-docker build --build-arg NEXT_PUBLIC_API_URL=YOUR_DEER-FLOW_API -t deer-flow-web .
+docker build --build-arg NEXT_PUBLIC_API_URL=YOUR_SCHOLARFLOW_API -t scholar-flow-web .
 ```
 
-Final, start up a docker container running the web server:
+Start a container:
 
 ```bash
-# Replace deer-flow-web-app with your preferred container name
-docker run -d -t -p 3000:3000 --env-file .env --name deer-flow-web-app deer-flow-web
+docker run -d -t -p 3000:3000 --env-file .env --name scholar-flow-web-app scholar-flow-web
 
 # stop the server
-docker stop deer-flow-web-app
+docker stop scholar-flow-web-app
 ```
 
 ### Docker Compose
 
-You can also setup this project with the docker compose:
-
 ```bash
-# building docker image
 docker compose build
-
-# start the server
 docker compose up
 ```
 
@@ -97,16 +94,11 @@ This project is open source and available under the [MIT License](../LICENSE).
 
 ## Acknowledgments
 
-We extend our heartfelt gratitude to the open source community for their invaluable contributions.
-DeerFlow is built upon the foundation of these outstanding projects:
+ScholarFlow Web UI is built with these outstanding open-source projects:
 
-In particular, we want to express our deep appreciation for:
-
-- [Next.js](https://nextjs.org/) for their exceptional framework
-- [Shadcn](https://ui.shadcn.com/) for their minimalistic components that powers our UI
-- [Zustand](https://zustand.docs.pmnd.rs/) for their stunning state management
-- [Framer Motion](https://www.framer.com/motion/) for their amazing animation library
-- [React Markdown](https://www.npmjs.com/package/react-markdown) for their exceptional markdown rendering and customizability
-- Last but not least, special thanks to [SToneX](https://github.com/stonexer) for his great contribution for [token-by-token visual effect](./src/core/rehype/rehype-split-words-into-spans.ts)
-
-These outstanding projects form the backbone of DeerFlow and exemplify the transformative power of open source collaboration.
+- [Next.js](https://nextjs.org/) for the web framework
+- [Shadcn](https://ui.shadcn.com/) for UI components
+- [Zustand](https://zustand.docs.pmnd.rs/) for state management
+- [Framer Motion](https://www.framer.com/motion/) for animations
+- [React Markdown](https://www.npmjs.com/package/react-markdown) for Markdown rendering
+- [SToneX](https://github.com/stonexer) for token-by-token visual effects

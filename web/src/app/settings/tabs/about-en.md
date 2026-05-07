@@ -1,44 +1,42 @@
-# 🦌 [About DeerFlow TS (Unofficial)](https://github.com/yaodada123/deer-flow-ts)
+# 📚 About ScholarFlow
 
-> **From Open Source, Back to Open Source**
+> **A multi-agent assistant for academic research workflows**
 
-**DeerFlow TS** is an unofficial TypeScript re-implementation that aims to keep the original Web UI compatible while migrating the server side to TypeScript.
+**ScholarFlow** is a TypeScript-based academic Research Agent that helps users turn research questions into structured plans, retrieve evidence from local materials or optional web sources, and generate Markdown research reports.
 
-This project is built with great respect for the original **DeerFlow** and credits the upstream authors and community.
+The project focuses on controllable and observable agent workflows: planning before execution, human review before research, tool-call visibility, and evidence-aware report generation.
 
 ---
 
-## 🌟 GitHub Repositories
+## 🌟 Project Focus
 
-- DeerFlow TS (this repo): [github.com/yaodada123/deer-flow-ts](https://github.com/yaodada123/deer-flow-ts)
-- Original DeerFlow (upstream): [github.com/bytedance/deer-flow](https://github.com/bytedance/deer-flow)
+- Multi-agent workflow: Coordinator, Planner, Researcher, Reporter
+- Human-in-the-loop plan review and editing
+- Local academic RAG for Markdown/TXT papers, notes, and course materials
+- Optional Web Search for background investigation
+- SSE streaming for real-time agent messages and tool-call updates
+- OpenAI-compatible model abstraction for flexible LLM providers
 
 ---
 
 ## 📜 License
 
-This UI and the TS implementation are distributed under the **MIT License**.
+This UI and the TypeScript implementation are distributed under the **MIT License**.
 
 ---
 
 ## 🙌 Acknowledgments
 
-We extend our heartfelt gratitude to the open source projects and contributors who have made DeerFlow possible. We truly stand on the shoulders of giants.
+ScholarFlow is built on the broader open-source LLM ecosystem and inspired by modern deep-research style agents.
 
 ### Core Frameworks
-- **[LangChain](https://github.com/langchain-ai/langchain)**: A phenomenal framework that powers our LLM interactions and chains.
-- **[LangGraph](https://github.com/langchain-ai/langgraph)**: Enabling sophisticated multi-agent orchestration.
-- **[Next.js](https://nextjs.org/)**: A cutting-edge framework for building web applications.
+- **[LangChain](https://github.com/langchain-ai/langchain)**: LLM interaction primitives.
+- **[LangGraph](https://github.com/langchain-ai/langgraph)**: Multi-agent workflow orchestration.
+- **[Next.js](https://nextjs.org/)**: Web application framework.
 
 ### UI Libraries
-- **[Shadcn](https://ui.shadcn.com/)**: Minimalistic components that power the UI.
-- **[Zustand](https://zustand.docs.pmnd.rs/)**: A stunning state management library.
-- **[Framer Motion](https://www.framer.com/motion/)**: An amazing animation library.
-- **[React Markdown](https://www.npmjs.com/package/react-markdown)**: Exceptional markdown rendering with customizability.
-- **[SToneX](https://github.com/stonexer)**: For invaluable contribution to token-by-token visual effects.
-
-### Special Thanks
-We want to express our heartfelt gratitude to the core authors of the original `DeerFlow`:
-
-- **[Daniel Walnut](https://github.com/hetaoBackend/)**
-- **[Henry Li](https://github.com/magiccube/)**
+- **[Shadcn](https://ui.shadcn.com/)**: Minimalistic UI components.
+- **[Zustand](https://zustand.docs.pmnd.rs/)**: State management.
+- **[Framer Motion](https://www.framer.com/motion/)**: Animations.
+- **[React Markdown](https://www.npmjs.com/package/react-markdown)**: Markdown rendering.
+- **[SToneX](https://github.com/stonexer)**: Token-by-token visual effects.
