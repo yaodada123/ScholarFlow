@@ -13,6 +13,7 @@ import {
   buildPlannerEditPrompt,
   buildPlannerPrompt,
   buildReporterPrompt,
+  ensureTopicPlanFields,
   safeParsePlan,
 } from "../workflow.js";
 import type { ThreadStore } from "../runtime/thread-store.js";
@@ -127,6 +128,24 @@ function parseCoordinatorDecision(text: string): CoordinatorDecision | null {
   if (typeof message !== "string" || !message.trim()) return null;
 
   return { action: "direct_response", message };
+}
+
+function extractObservationSources(observations: string[]): Array<{ title: string; uri: string }> {
+  const sources: Array<{ title: string; uri: string }> = [];
+  const seen = new Set<string>();
+  const sourcePattern = /^- \[\d+\] (.+?) \((https?:\/\/[^)]+)\)/gm;
+
+  for (const observation of observations) {
+    for (const match of observation.matchAll(sourcePattern)) {
+      const title = match[1]?.trim();
+      const uri = match[2]?.trim();
+      if (!title || !uri || seen.has(uri)) continue;
+      seen.add(uri);
+      sources.push({ title, uri });
+    }
+  }
+
+  return sources;
 }
 
 async function decideCoordinatorAction(params: {
@@ -440,20 +459,30 @@ export async function* runChatWorkflow(params: {
       },
     });
 
-    let content = "";
+    let investigationText = "";
+    let toolResult = "[]";
     try {
       const results = await webSearch({
         query: s.researchTopic,
         maxResults: s.maxSearchResults,
         ...(config?.signal ? { signal: config.signal } : {}),
       });
-      content = results.length
+      investigationText = results.length
         ? results
             .map((r, i) => `- [${i + 1}] ${r.title} (${r.url})${r.content ? `\n  ${r.content}` : ""}`)
             .join("\n")
         : "(no search results)";
+      toolResult = JSON.stringify(
+        results.map((r) => ({
+          type: "page",
+          title: r.title,
+          url: r.url,
+          content: r.content ?? "",
+        })),
+      );
     } catch (e) {
-      content = e instanceof Error ? e.message : String(e);
+      investigationText = e instanceof Error ? e.message : String(e);
+      toolResult = JSON.stringify([{ type: "page", title: investigationText, url: "", content: "" }]);
     }
 
     emit(config, {
@@ -464,13 +493,13 @@ export async function* runChatWorkflow(params: {
         agent: "researcher",
         role: "tool",
         tool_call_id: toolCallId,
-        content,
+        content: toolResult,
       },
     });
 
-    store.set({ ...(s as WorkflowState), backgroundInvestigationResults: content });
+    store.set({ ...(s as WorkflowState), backgroundInvestigationResults: investigationText });
 
-    return { backgroundInvestigationResults: content };
+    return { backgroundInvestigationResults: investigationText };
   };
 
   const plannerNode = async (s: PlanningGraphState, config?: LangGraphRunnableConfig) => {
@@ -583,13 +612,17 @@ export async function* runChatWorkflow(params: {
         });
       }
 
-      const parsedPlan =
-        safeParsePlan(fullText) ??
-        buildFallbackPlan({
-          query: next.researchTopic,
-          maxSteps: next.maxStepNum,
-          enableWebSearch: next.enableWebSearch,
-        });
+      const parsedPlan = ensureTopicPlanFields({
+        plan:
+          safeParsePlan(fullText) ??
+          buildFallbackPlan({
+            query: next.researchTopic,
+            maxSteps: next.maxStepNum,
+            enableWebSearch: next.enableWebSearch,
+          }),
+        query: next.researchTopic,
+        enableWebSearch: next.enableWebSearch,
+      });
 
       const json = JSON.stringify(parsedPlan, null, 2);
       emit(config, {
@@ -782,6 +815,13 @@ export async function* runChatWorkflow(params: {
         return `- [${i + 1}] ${r.title} (${r.uri})${desc}${excerpt}`;
       })
       .join("\n");
+    const retrievalToolResult = JSON.stringify(
+      retrieved.map((r, i) => ({
+        id: r.uri,
+        title: r.title,
+        content: r.excerpt ?? r.description ?? `Resource ${i + 1}`,
+      })),
+    );
 
     emit(config, {
       type: "tool_call_result",
@@ -791,7 +831,7 @@ export async function* runChatWorkflow(params: {
         agent: "researcher",
         role: "tool",
         tool_call_id: toolCallId,
-        content: retrievalText || "(no resources)",
+        content: retrievalToolResult,
       },
     });
 
@@ -822,7 +862,10 @@ export async function* runChatWorkflow(params: {
 
   const reporterNode = async (s: PlanningGraphState, config?: LangGraphRunnableConfig) => {
     const reporterId = newMessageId();
-    const sources = s.resources.map((r) => ({ title: r.title, uri: r.uri }));
+    const sources = [
+      ...s.resources.map((r) => ({ title: r.title, uri: r.uri })),
+      ...extractObservationSources(s.observations),
+    ];
     const style = s.reportStyle;
     const observations = s.observations;
     const planForReport =

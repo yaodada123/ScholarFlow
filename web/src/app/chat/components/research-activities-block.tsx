@@ -113,7 +113,7 @@ const ActivityListItem = React.memo(({ messageId }: { messageId: string }) => {
             return <CrawlToolCall key={toolCall.id} toolCall={toolCall} />;
           } else if (toolCall.name === "python_repl_tool") {
             return <PythonToolCall key={toolCall.id} toolCall={toolCall} />;
-          } else if (toolCall.name === "local_search_tool") {
+          } else if (toolCall.name === "local_search_tool" || toolCall.name === "retrieve_resources") {
             return <RetrieverToolCall key={toolCall.id} toolCall={toolCall} />;
           } else {
             return <MCPToolCall key={toolCall.id} toolCall={toolCall} />;
@@ -150,14 +150,12 @@ function WebSearchToolCall({ toolCall }: { toolCall: ToolCallRuntime }) {
   }, [toolCall.result]);
   const searchResults = useMemo<SearchResult[]>(() => {
     let results: SearchResult[] | undefined = undefined;
-    let parseError = false;
-    
+
     try {
       if (toolCall.result) {
         results = parseJSON(toolCall.result, []);
       }
     } catch (error) {
-      parseError = true;
       console.warn("Failed to parse search results:", error);
       results = undefined;
     }
@@ -337,7 +335,7 @@ function RetrieverToolCall({ toolCall }: { toolCall: ToolCallRuntime }) {
           <Search size={16} className={"mr-2"} />
           <span>{t("retrievingDocuments")}&nbsp;</span>
           <span className="max-w-[500px] overflow-hidden text-ellipsis whitespace-nowrap">
-            {(toolCall.args as { keywords: string }).keywords}
+            {String((toolCall.args as { keywords?: string; query?: string }).keywords ?? (toolCall.args as { query?: string }).query ?? "")}
           </span>
         </RainbowText>
       </div>
