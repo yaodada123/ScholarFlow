@@ -6,6 +6,7 @@ import type { ChatRequest } from "../schemas.js";
 import type { LlmConfig } from "../llm/env-models.js";
 import { loadLlmConfig } from "../llm/env-models.js";
 import { OpenAICompatibleClient } from "../llm/openai-compatible.js";
+import { academicResultsToToolResult, academicSearch, formatAcademicResults } from "../tools/academic-search.js";
 import { retrieveResources } from "../tools/resources.js";
 import { webSearch } from "../tools/web-search.js";
 import {
@@ -417,25 +418,30 @@ export async function* runChatWorkflow(params: {
     if (!shouldPlan) return {};
     if (!s.enableBackgroundInvestigation || !s.enableWebSearch) return {};
 
-    const toolCallId = newToolCallId();
+    const academicToolCallId = newToolCallId();
+    const webToolCallId = newToolCallId();
     const researcherId = newMessageId();
     const toolCalls: ToolCall[] = [
       {
         type: "tool_call",
-        id: toolCallId,
+        id: academicToolCallId,
+        name: "academic_search",
+        args: { query: s.researchTopic, max_results: s.maxSearchResults },
+      },
+      {
+        type: "tool_call",
+        id: webToolCallId,
         name: "web_search",
         args: { query: s.researchTopic, max_results: s.maxSearchResults },
       },
     ];
-    const toolCallChunks: ToolCallChunk[] = [
-      {
-        type: "tool_call_chunk",
-        index: 0,
-        id: toolCallId,
-        name: "web_search",
-        args: JSON.stringify(toolCalls[0]!.args),
-      },
-    ];
+    const toolCallChunks: ToolCallChunk[] = toolCalls.map((toolCall, index) => ({
+      type: "tool_call_chunk",
+      index,
+      id: toolCall.id,
+      name: toolCall.name,
+      args: JSON.stringify(toolCall.args),
+    }));
 
     emit(config, {
       type: "tool_calls",
@@ -459,30 +465,19 @@ export async function* runChatWorkflow(params: {
       },
     });
 
-    let investigationText = "";
-    let toolResult = "[]";
+    let academicText = "";
+    let academicToolResult = "[]";
     try {
-      const results = await webSearch({
+      const results = await academicSearch({
         query: s.researchTopic,
         maxResults: s.maxSearchResults,
         ...(config?.signal ? { signal: config.signal } : {}),
       });
-      investigationText = results.length
-        ? results
-            .map((r, i) => `- [${i + 1}] ${r.title} (${r.url})${r.content ? `\n  ${r.content}` : ""}`)
-            .join("\n")
-        : "(no search results)";
-      toolResult = JSON.stringify(
-        results.map((r) => ({
-          type: "page",
-          title: r.title,
-          url: r.url,
-          content: r.content ?? "",
-        })),
-      );
+      academicText = formatAcademicResults(results);
+      academicToolResult = academicResultsToToolResult(results);
     } catch (e) {
-      investigationText = e instanceof Error ? e.message : String(e);
-      toolResult = JSON.stringify([{ type: "page", title: investigationText, url: "", content: "" }]);
+      academicText = e instanceof Error ? e.message : String(e);
+      academicToolResult = JSON.stringify([{ type: "page", title: academicText, url: "", content: "" }]);
     }
 
     emit(config, {
@@ -492,11 +487,50 @@ export async function* runChatWorkflow(params: {
         id: researcherId,
         agent: "researcher",
         role: "tool",
-        tool_call_id: toolCallId,
-        content: toolResult,
+        tool_call_id: academicToolCallId,
+        content: academicToolResult,
       },
     });
 
+    let webText = "";
+    let webToolResult = "[]";
+    try {
+      const results = await webSearch({
+        query: s.researchTopic,
+        maxResults: s.maxSearchResults,
+        ...(config?.signal ? { signal: config.signal } : {}),
+      });
+      webText = results.length
+        ? results
+            .map((r, i) => `- [${i + 1}] ${r.title} (${r.url})${r.content ? `\n  ${r.content}` : ""}`)
+            .join("\n")
+        : "(no web search results)";
+      webToolResult = JSON.stringify(
+        results.map((r) => ({
+          type: "page",
+          title: r.title,
+          url: r.url,
+          content: r.content ?? "",
+        })),
+      );
+    } catch (e) {
+      webText = e instanceof Error ? e.message : String(e);
+      webToolResult = JSON.stringify([{ type: "page", title: webText, url: "", content: "" }]);
+    }
+
+    emit(config, {
+      type: "tool_call_result",
+      data: {
+        thread_id: s.threadId,
+        id: researcherId,
+        agent: "researcher",
+        role: "tool",
+        tool_call_id: webToolCallId,
+        content: webToolResult,
+      },
+    });
+
+    const investigationText = [`Academic literature search:\n${academicText}`, `Web search:\n${webText}`].join("\n\n");
     store.set({ ...(s as WorkflowState), backgroundInvestigationResults: investigationText });
 
     return { backgroundInvestigationResults: investigationText };
@@ -762,24 +796,33 @@ export async function* runChatWorkflow(params: {
       limit: Math.max(1, Math.min(10, s.maxSearchResults)),
     });
 
-    const toolCallId = newToolCallId();
+    const retrieveToolCallId = newToolCallId();
+    const academicToolCallId = newToolCallId();
     const toolCalls: ToolCall[] = [
       {
         type: "tool_call",
-        id: toolCallId,
+        id: retrieveToolCallId,
         name: "retrieve_resources",
         args: { query: s.researchTopic, limit: retrieved.length },
       },
+      ...(s.enableWebSearch
+        ? [
+            {
+              type: "tool_call" as const,
+              id: academicToolCallId,
+              name: "academic_search",
+              args: { query: s.researchTopic, max_results: s.maxSearchResults },
+            },
+          ]
+        : []),
     ];
-    const toolCallChunks: ToolCallChunk[] = [
-      {
-        type: "tool_call_chunk",
-        index: 0,
-        id: toolCallId,
-        name: "retrieve_resources",
-        args: JSON.stringify(toolCalls[0]!.args),
-      },
-    ];
+    const toolCallChunks: ToolCallChunk[] = toolCalls.map((toolCall, index) => ({
+      type: "tool_call_chunk",
+      index,
+      id: toolCall.id,
+      name: toolCall.name,
+      args: JSON.stringify(toolCall.args),
+    }));
 
     emit(config, {
       type: "tool_calls",
@@ -830,10 +873,46 @@ export async function* runChatWorkflow(params: {
         id: researcherId,
         agent: "researcher",
         role: "tool",
-        tool_call_id: toolCallId,
+        tool_call_id: retrieveToolCallId,
         content: retrievalToolResult,
       },
     });
+
+    let academicText = "";
+    if (s.enableWebSearch) {
+      try {
+        const academicResults = await academicSearch({
+          query: s.researchTopic,
+          maxResults: s.maxSearchResults,
+          ...(config?.signal ? { signal: config.signal } : {}),
+        });
+        academicText = formatAcademicResults(academicResults);
+        emit(config, {
+          type: "tool_call_result",
+          data: {
+            thread_id: s.threadId,
+            id: researcherId,
+            agent: "researcher",
+            role: "tool",
+            tool_call_id: academicToolCallId,
+            content: academicResultsToToolResult(academicResults),
+          },
+        });
+      } catch (e) {
+        academicText = e instanceof Error ? e.message : String(e);
+        emit(config, {
+          type: "tool_call_result",
+          data: {
+            thread_id: s.threadId,
+            id: researcherId,
+            agent: "researcher",
+            role: "tool",
+            tool_call_id: academicToolCallId,
+            content: JSON.stringify([{ type: "page", title: academicText, url: "", content: "" }]),
+          },
+        });
+      }
+    }
 
     emit(config, {
       type: "message_chunk",
@@ -849,6 +928,7 @@ export async function* runChatWorkflow(params: {
     const updates = [
       s.backgroundInvestigationResults ? `Background investigation:\n${s.backgroundInvestigationResults}` : null,
       retrievalText ? `Retrieved resources:\n${retrievalText}` : null,
+      academicText ? `Academic literature search:\n${academicText}` : null,
     ].filter((x): x is string => Boolean(x));
 
     const next = {

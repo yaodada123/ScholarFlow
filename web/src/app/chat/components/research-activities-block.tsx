@@ -107,7 +107,7 @@ const ActivityListItem = React.memo(({ messageId }: { messageId: string }) => {
       const toolCallComponents = message.toolCalls
         .filter(toolCall => !(typeof toolCall.result === "string" && toolCall.result?.startsWith("Error")))
         .map(toolCall => {
-          if (toolCall.name === "web_search") {
+          if (toolCall.name === "web_search" || toolCall.name === "academic_search") {
             return <WebSearchToolCall key={toolCall.id} toolCall={toolCall} />;
           } else if (toolCall.name === "crawl_tool") {
             return <CrawlToolCall key={toolCall.id} toolCall={toolCall} />;
