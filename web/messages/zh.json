@@ -20,10 +20,10 @@
     "title": "ScholarFlow"
   },
   "hero": {
-    "title": "学术研究",
+    "title": "课题方向",
     "subtitle": "有据可依",
-    "description": "认识 ScholarFlow，一个多智能体学术研究助手。它可以帮助你规划研究问题，检索本地资料和网页证据，并生成结构化研究报告。",
-    "footnote": "* ScholarFlow 专注于先规划、再检索、基于证据生成报告的研究工作流。"
+    "description": "认识 ScholarFlow，一个面向课题选题与学术调研报告的多智能体研究系统。它可以生成候选课题方向，检索本地资料、arXiv、OpenAlex 和可选网页证据，并生成可评估、可编辑的结构化报告。",
+    "footnote": "* ScholarFlow 专注于课题方向生成、证据检索、报告撰写、质量评估和编辑优化的研究工作流。"
   },
   "settings": {
     "title": "ScholarFlow 设置",
@@ -108,13 +108,13 @@
     },
     "welcome": {
       "greeting": "👋 你好！",
-      "description": "欢迎来到 📚 ScholarFlow，一个 TypeScript 学术研究助手，专注于先规划、工具增强和证据感知的研究工作流。"
+      "description": "欢迎来到 📚 ScholarFlow，一个面向课题方向生成、学术检索、调研报告撰写、评估与编辑的研究 Agent 系统。"
     },
     "conversationStarters": [
-      "基于我上传的笔记，总结检索增强生成的核心思想。",
-      "为多智能体研究助手这个方向制定一份文献综述计划。",
-      "比较 Transformer 注意力机制的主要局限。",
-      "帮我起草一份关于 LLM 幻觉缓解方法的研究报告大纲。"
+      "帮我生成 3 个关于人工智能辅助高中数学学习的可行课题方向。",
+      "围绕大模型辅助编程做一份近期研究综述和选题建议。",
+      "基于我上传的论文，推荐几个适合本科毕设的研究方向。",
+      "调研多智能体学术助手的现状，并输出一份结构化报告。"
     ],
     "inputBox": {
       "deepThinking": "深度思考",
@@ -215,20 +215,20 @@
       "clickToWatch": "点击观看回放",
       "cases": [
         {
-          "title": "为 RAG 系统制定文献综述计划",
-          "description": "工作流会将宽泛研究主题拆解为背景、关键方法、局限和评估维度。"
+          "title": "生成人工智能教育方向的课题选题",
+          "description": "工作流会比较候选课题的研究价值、可行性、创新性和证据可得性。"
         },
         {
-          "title": "比较多智能体研究助手架构",
-          "description": "报告分析 planner-researcher-reporter 工作流、人机协作控制和可观察性权衡。"
+          "title": "调研大模型辅助编程的近期研究",
+          "description": "报告会结合 arXiv、OpenAlex 和网页证据，梳理代表性论文、趋势和研究空白。"
         },
         {
-          "title": "总结上传的 Transformer 注意力机制笔记",
-          "description": "研究过程会基于本地笔记作为证据，生成结构化解释、局限和后续问题。"
+          "title": "基于上传论文推荐毕业设计方向",
+          "description": "研究过程会优先使用本地论文作为证据，生成候选方向、研究问题和实施路径。"
         },
         {
-          "title": "起草一份关于幻觉缓解方法的报告大纲",
-          "description": "计划会先收集 RAG、引用溯源、验证和评估指标相关证据，再生成报告。"
+          "title": "评估并优化一份学术调研报告",
+          "description": "系统会统计章节、引用和来源覆盖，并支持在编辑器中继续润色和扩写。"
         }
       ]
     },
@@ -237,30 +237,30 @@
       "description": "了解 ScholarFlow 如何服务学术研究。",
       "features": [
         {
-          "name": "深入挖掘，触及更广",
-          "description": "从本地学术资料和可选网页来源检索证据，并将发现综合为结构化报告。"
+          "name": "课题方向生成",
+          "description": "从宽泛兴趣出发，生成多个候选课题，并比较研究价值、可行性、创新性和证据计划。"
         },
         {
-          "name": "人机协作",
-          "description": "在执行前用自然语言审阅和调整研究计划。"
+          "name": "学术证据检索",
+          "description": "结合本地资料、arXiv、OpenAlex 和可选网页搜索，沉淀可追踪的调研证据。"
         },
         {
-          "name": "Lang 技术栈",
-          "description": "使用 LangChain 和 LangGraph 框架自信地构建。"
+          "name": "人机协作规划",
+          "description": "在执行前用自然语言审阅和调整研究计划，让选题和检索路径更可控。"
         },
         {
-          "name": "MCP 集成",
-          "description": "通过 MCP 工具和私有知识源扩展学术研究工作流。"
+          "name": "报告评估与编辑",
+          "description": "对生成报告进行指标评估，并在编辑器中继续 AI 润色、改写、扩写和图片补充。"
         },
         {
-          "name": "播客生成",
-          "description": "从报告生成音频摘要，便于复习、分享或移动学习。"
+          "name": "TypeScript Agent 工程",
+          "description": "基于 Fastify、LangGraph 和 Next.js 构建可观察、可扩展的学术研究工作流。"
         }
       ]
     },
     "multiAgent": {
-      "title": "多智能体架构",
-      "description": "体验规划、证据检索、综合和报告生成之间的多智能体协作。"
+      "title": "ScholarFlow 工作流",
+      "description": "体验从课题方向生成、学术检索、证据综合到报告评估与编辑的多智能体协作。"
     },
     "joinCommunity": {
       "title": "共建 ScholarFlow",

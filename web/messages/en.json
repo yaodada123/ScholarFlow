@@ -20,10 +20,10 @@
     "title": "ScholarFlow"
   },
   "hero": {
-    "title": "Academic Research",
+    "title": "Research Topics",
     "subtitle": "with Evidence",
-    "description": "Meet ScholarFlow, a multi-agent academic research assistant. It helps plan research questions, retrieve evidence from local materials and web sources, and generate structured reports.",
-    "footnote": "* ScholarFlow focuses on plan-first, evidence-aware research workflows."
+    "description": "Meet ScholarFlow, a multi-agent research system for topic discovery and academic reports. It proposes candidate research directions, retrieves evidence from local materials, arXiv, OpenAlex, and optional web sources, then generates reports you can evaluate and edit.",
+    "footnote": "* ScholarFlow focuses on topic discovery, evidence retrieval, report writing, quality evaluation, and editing workflows."
   },
   "settings": {
     "title": "ScholarFlow Settings",
@@ -108,13 +108,13 @@
     },
     "welcome": {
       "greeting": "👋 Hello, there!",
-      "description": "Welcome to 📚 ScholarFlow, a TypeScript academic research assistant for plan-first, tool-augmented, evidence-aware workflows."
+      "description": "Welcome to 📚 ScholarFlow, a research agent system for topic discovery, academic search, report writing, evaluation, and editing."
     },
     "conversationStarters": [
-      "Summarize the key ideas of retrieval-augmented generation from my uploaded notes.",
-      "Create a literature review plan for multi-agent research assistants.",
-      "Compare the main limitations of Transformer attention mechanisms.",
-      "Help me draft a research report outline about LLM hallucination mitigation."
+      "Generate three feasible research topic directions about AI-assisted high school math learning.",
+      "Review recent research on LLM-assisted programming and recommend topic ideas.",
+      "Based on my uploaded papers, suggest several undergraduate thesis directions.",
+      "Investigate multi-agent academic assistants and produce a structured report."
     ],
     "inputBox": {
       "deepThinking": "Deep Thinking",
@@ -215,20 +215,20 @@
       "clickToWatch": "Click to watch replay",
       "cases": [
         {
-          "title": "Create a literature review plan for RAG systems",
-          "description": "The workflow decomposes a broad research topic into background, key methods, limitations, and evaluation dimensions."
+          "title": "Generate topic ideas for AI in education",
+          "description": "The workflow compares candidate topics by research value, feasibility, novelty, and evidence availability."
         },
         {
-          "title": "Compare multi-agent research assistant architectures",
-          "description": "The report analyzes planner-researcher-reporter workflows, human-in-the-loop controls, and observability trade-offs."
+          "title": "Investigate recent LLM-assisted programming research",
+          "description": "The report combines arXiv, OpenAlex, and web evidence to summarize representative papers, trends, and research gaps."
         },
         {
-          "title": "Summarize uploaded Transformer attention notes",
-          "description": "The research uses local notes as evidence and produces a structured explanation with limitations and follow-up questions."
+          "title": "Recommend thesis directions from uploaded papers",
+          "description": "The research prioritizes local papers as evidence and produces candidate directions, research questions, and implementation paths."
         },
         {
-          "title": "Draft a report outline about hallucination mitigation",
-          "description": "The plan collects evidence about RAG, citation grounding, verification, and evaluation metrics before drafting a report."
+          "title": "Evaluate and improve an academic research report",
+          "description": "ScholarFlow checks sections, citations, and source coverage, then supports further editing and expansion in the editor."
         }
       ]
     },
@@ -237,30 +237,30 @@
       "description": "Find out what makes ScholarFlow useful for academic research.",
       "features": [
         {
-          "name": "Dive Deeper and Reach Wider",
-          "description": "Retrieve evidence from local academic materials and optional web sources, then synthesize findings into structured reports."
+          "name": "Topic Direction Generation",
+          "description": "Start from a broad interest and compare candidate topics by research value, feasibility, novelty, and evidence plan."
         },
         {
-          "name": "Human-in-the-loop",
-          "description": "Review and refine the research plan before execution using simple natural language."
+          "name": "Academic Evidence Retrieval",
+          "description": "Combine local materials, arXiv, OpenAlex, and optional web search into traceable research observations."
         },
         {
-          "name": "Lang Stack",
-          "description": "Build with confidence using the LangChain and LangGraph frameworks."
+          "name": "Human-guided Planning",
+          "description": "Review and refine the research plan before execution so topic selection and search strategy stay controllable."
         },
         {
-          "name": "MCP Integrations",
-          "description": "Extend the academic research workflow with MCP tools and private knowledge sources."
+          "name": "Report Evaluation and Editing",
+          "description": "Evaluate generated reports with metrics, then continue polishing, rewriting, expanding, and adding images in the editor."
         },
         {
-          "name": "Podcast Generation",
-          "description": "Generate audio summaries from reports for review, sharing, or on-the-go learning."
+          "name": "TypeScript Agent Engineering",
+          "description": "Build observable and extensible academic workflows with Fastify, LangGraph, and Next.js."
         }
       ]
     },
     "multiAgent": {
-      "title": "Multi-Agent Architecture",
-      "description": "Experience agent teamwork across planning, evidence retrieval, synthesis, and reporting."
+      "title": "ScholarFlow Workflow",
+      "description": "Experience agent teamwork across topic discovery, academic search, evidence synthesis, report evaluation, and editing."
     },
     "joinCommunity": {
       "title": "Build ScholarFlow",

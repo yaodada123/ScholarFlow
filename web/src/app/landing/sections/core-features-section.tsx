@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import {
-  Bird,
+  BookOpenCheck,
+  FilePenLine,
+  GraduationCap,
   Microscope,
-  Podcast,
-  Usb,
-  User,
+  Route,
   type LucideProps,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
@@ -26,28 +26,28 @@ type FeatureIcon = {
 
 const featureIcons: Array<FeatureIcon> = [
   {
-    Icon: Microscope,
-    href: "https://github.com/yaodada123/deer-flow-ts/tree/main/src/server/tools",
+    Icon: GraduationCap,
+    href: "https://github.com/yaodada123/deer-flow-ts/blob/main/src/server/workflow.ts",
     className: "lg:col-start-1 lg:col-end-2 lg:row-start-1 lg:row-end-3",
   },
   {
-    Icon: User,
-    href: "https://github.com/yaodada123/deer-flow-ts/blob/main/src/server/chat/run-chat-workflow.ts",
+    Icon: Microscope,
+    href: "https://github.com/yaodada123/deer-flow-ts/tree/main/src/server/tools",
     className: "lg:col-start-1 lg:col-end-2 lg:row-start-3 lg:row-end-4",
   },
   {
-    Icon: Bird,
-    href: "https://www.langchain.com/",
+    Icon: Route,
+    href: "https://github.com/yaodada123/deer-flow-ts/blob/main/src/server/chat/run-chat-workflow.ts",
     className: "lg:col-start-2 lg:col-end-3 lg:row-start-1 lg:row-end-2",
   },
   {
-    Icon: Usb,
-    href: "https://github.com/yaodada123/deer-flow-ts/blob/main/src/server/app.ts",
+    Icon: BookOpenCheck,
+    href: "https://github.com/yaodada123/deer-flow-ts/tree/main/src/server/evaluation",
     className: "lg:col-start-2 lg:col-end-3 lg:row-start-2 lg:row-end-3",
   },
   {
-    Icon: Podcast,
-    href: "https://github.com/yaodada123/deer-flow-ts/tree/main/web/src/core/api/podcast.ts",
+    Icon: FilePenLine,
+    href: "https://github.com/yaodada123/deer-flow-ts/blob/main/src/server/app.ts",
     className: "lg:col-start-2 lg:col-end-3 lg:row-start-3 lg:row-end-4",
   },
 ];

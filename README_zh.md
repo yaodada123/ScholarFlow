@@ -2,9 +2,9 @@
 
 [English](./README.md) | [简体中文](./README_zh.md) | [日本語](./README_ja.md) | [Deutsch](./README_de.md) | [Español](./README_es.md) | [Русский](./README_ru.md) | [Portuguese](./README_pt.md)
 
-**ScholarFlow** 是一个面向学术研究场景的多智能体 Research Agent，基于 TypeScript、Fastify、LangGraph 和 Next.js 构建。
+**ScholarFlow** 是一个面向课题方向生成与学术调研报告的多智能体 Research Agent，基于 TypeScript、Fastify、LangGraph 和 Next.js 构建。
 
-它可以将用户的研究问题转化为结构化研究计划，结合本地论文/笔记/课程资料和可选 Web Search 检索证据，并最终生成结构化 Markdown 研究报告。项目重点不是做一个通用聊天机器人，而是构建一个可规划、可检索、可追踪、可人工干预的学术研究工作流。
+它可以将用户的宽泛兴趣或研究问题转化为具体课题方向，结合本地论文/笔记/课程资料、arXiv、OpenAlex 和可选 Web Search 检索证据，并最终生成、评估和编辑结构化 Markdown 调研报告。项目重点不是做一个通用聊天机器人，而是构建一个可规划、可检索、可追踪、可人工干预的学术研究工作流。
 
 ## 演示
 
@@ -14,29 +14,30 @@
 
 ## 现状（能力概览）
 
-- 学术研究工作流
+- 课题方向研究工作流
   - Coordinator：判断直接回复或进入学术研究链路
-  - Planner：根据研究问题生成结构化研究计划
+  - Planner：生成候选课题方向、研究问题、可行性、创新性和证据计划
   - Human Feedback：用户可在执行前审阅、接受或编辑研究计划
-  - Researcher：检索本地论文/笔记资料和可选 Web 证据，并沉淀 Observations
-  - Reporter：基于计划、证据和来源生成结构化 Markdown 研究报告
+  - Researcher：检索本地论文/笔记、免费学术搜索结果和可选 Web 证据
+  - Reporter：基于计划、证据和来源生成结构化 Markdown 调研报告
+- 学术证据检索
+  - 本地 RAG：上传 Markdown/TXT 论文、笔记或课程资料，并通过 `@` 引用
+  - 免费学术搜索：接入 arXiv + OpenAlex，获取论文标题、作者、年份、DOI、概念标签和引用数
+  - 可选 Web Search：设置 `TAVILY_API_KEY` 后启用 Tavily
+- 报告优化与质量闭环
+  - Prompt 增强：`POST /api/prompt/enhance`
+  - 报告质量评估：`POST /api/report/evaluate`，支持自动指标和可选 LLM-as-Judge
+  - 编辑器 AI 改写/续写：`POST /api/prose/generate`
+  - 支持报告导出和本地图片上传
 - 服务端与协议
   - Fastify + TypeScript（ESM）
   - SSE 流式接口：`POST /api/chat/stream`
   - 配置接口：`GET /api/config`（返回 models 与 rag.provider）
-- 本地学术 RAG（最小可用闭环）
-  - 上传：`POST /api/rag/upload`（仅支持 `.md`/`.txt`）
-  - 列表/搜索：`GET /api/rag/resources?query=`
-  - 引用方式：输入框通过 `@` 选择论文、笔记或研究资料
-  - 资源 URI：`rag://local/<file>`
-  - 检索注入：研究阶段读取 `data/rag/<file>` 内容片段并注入到工作流
-- Web Search（可选）
-  - 已接入 Tavily（设置 `TAVILY_API_KEY` 后启用）
-  - 可通过前端开关 `enable_web_search` 控制是否使用
-- MCP（配置占位）
-  - `POST /api/mcp/server/metadata`（用于前端配置页联调）
+- MCP 与 Podcast
+  - MCP metadata 接口已用于设置页联调，但完整工具发现/执行尚未启用
+  - Podcast/TTS 接口会返回明确的未启用响应，待配置 TTS provider 后扩展
 
-> 说明：当前版本优先跑通“规划、检索、综合、报告”的学术研究闭环。RAG 质量、引用溯源和外部学术搜索工具属于后续增强方向。
+> 说明：当前版本优先跑通“课题方向生成、证据检索、综合成文、质量评估、编辑优化”的学术调研闭环。更强的引用溯源、PDF 解析、向量 RAG 和完整 MCP 工具执行属于后续增强方向。
 
 ## 快速开始
 
@@ -69,12 +70,17 @@ npm install
 cp .env.example .env
 ```
 
-然后至少补齐一个可用的 LLM 配置（示例）：
+然后至少补齐一个 OpenAI-compatible LLM 配置。DeepSeek 示例：
 
 ```ini
-BASIC_MODEL__MODEL=
-BASIC_MODEL__API_KEY=
-# BASIC_MODEL__BASE_URL=https://api.openai.com/v1
+BASIC_MODEL__MODEL=deepseek-chat
+BASIC_MODEL__API_KEY=sk-your-deepseek-api-key
+BASIC_MODEL__BASE_URL=https://api.deepseek.com
+
+# 可选：深度思考模式使用
+# REASONING_MODEL__MODEL=deepseek-reasoner
+# REASONING_MODEL__API_KEY=sk-your-deepseek-api-key
+# REASONING_MODEL__BASE_URL=https://api.deepseek.com
 ```
 
 > 注意：`.env` 通常包含密钥信息，请勿提交到公开仓库。
@@ -117,9 +123,10 @@ npm run dev:web
 - 学术 RAG 增强：分段、索引、向量检索、重排和 metadata 过滤
 - PDF 论文解析、章节感知切分和参考文献抽取
 - Citation Grounding：将报告中的关键结论绑定到具体资料片段
-- 学术搜索工具：arXiv、Semantic Scholar、CrossRef、BibTeX 工作流
-- 评估体系：计划质量、证据覆盖、引用准确性和幻觉风险评估
-- 更完整的 MCP 工具发现与 workflow 集成
+- 更多学术搜索集成：Semantic Scholar、CrossRef、BibTeX 工作流
+- 更强的评估体系：计划质量、证据覆盖、引用准确性和幻觉风险评估
+- 完整 MCP 工具发现、安全执行与 workflow 集成
+- 可选 TTS provider 集成，用于播客/音频报告生成
 
 ## 致谢
 

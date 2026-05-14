@@ -2,9 +2,9 @@
 
 [English](./README.md) | [简体中文](./README_zh.md) | [日本語](./README_ja.md) | [Deutsch](./README_de.md) | [Español](./README_es.md) | [Русский](./README_ru.md) | [Portuguese](./README_pt.md)
 
-**ScholarFlow** is a multi-agent academic research assistant built with TypeScript, Fastify, LangGraph, and Next.js.
+**ScholarFlow** is a multi-agent academic research system built with TypeScript, Fastify, LangGraph, and Next.js.
 
-It helps users turn research questions into structured research plans, retrieve evidence from local academic materials or optional web sources, and generate grounded Markdown research reports. The project focuses on a controllable, observable, and human-in-the-loop research workflow rather than a generic one-shot chatbot.
+It helps users turn a broad interest area into concrete research topic directions, retrieve academic evidence from local materials, arXiv, OpenAlex, and optional web sources, then generate, evaluate, and edit grounded Markdown research reports. The project focuses on a controllable, observable, evidence-aware workflow for topic discovery and literature investigation rather than a generic one-shot chatbot.
 
 ## Demo
 
@@ -14,29 +14,30 @@ It helps users turn research questions into structured research plans, retrieve 
 
 ## Current Status (Capabilities)
 
-- Academic research workflow
+- Topic-direction research workflow
   - Coordinator: decides direct response vs. academic research workflow
-  - Planner: produces a structured research plan for the user's research question
+  - Planner: proposes candidate topic directions, research questions, feasibility, novelty, and an evidence plan
   - Human feedback: lets users review, accept, or edit the plan before execution
-  - Researcher: retrieves local notes/papers and optional web evidence, then accumulates observations
+  - Researcher: retrieves local papers/notes, free academic search results, and optional web evidence
   - Reporter: generates a structured Markdown research report based on the plan, evidence, and sources
+- Academic evidence retrieval
+  - Local RAG: upload Markdown/TXT papers, notes, or course materials and reference them via `@`
+  - Free academic search: arXiv + OpenAlex for papers, metadata, DOI links, authors, years, concepts, and citation counts
+  - Optional Web Search: Tavily is enabled when `TAVILY_API_KEY` is set
+- Report refinement and quality loop
+  - Prompt enhancement: `POST /api/prompt/enhance`
+  - Report evaluation: `POST /api/report/evaluate` with automated metrics and optional LLM-as-judge
+  - Editor prose generation: `POST /api/prose/generate`
+  - Report export and local image upload support
 - Server & protocol
   - Fastify + TypeScript (ESM)
   - SSE streaming endpoint: `POST /api/chat/stream`
   - Config endpoint: `GET /api/config` (returns models and `rag.provider`)
-- Local academic RAG (minimal working loop)
-  - Upload: `POST /api/rag/upload` (only `.md` / `.txt`)
-  - List/search: `GET /api/rag/resources?query=`
-  - Reference: select papers, notes, or research materials via `@` in the input box
-  - Resource URI format: `rag://local/<file>`
-  - Retrieval injection: reads an excerpt from `data/rag/<file>` and injects it into the research workflow
-- Web Search (optional)
-  - Integrated Tavily (enabled when `TAVILY_API_KEY` is set)
-  - Controlled via the frontend toggle `enable_web_search`
-- MCP (configuration placeholder)
-  - `POST /api/mcp/server/metadata` (for frontend settings integration)
+- MCP and Podcast
+  - MCP metadata endpoint exists for settings integration, but full tool discovery/execution is not enabled yet
+  - Podcast/TTS endpoint returns a clear unsupported response until a TTS provider is configured
 
-> Note: the current version prioritizes an end-to-end academic research loop: plan, retrieve, synthesize, and report. RAG quality, citation grounding, and external academic search integrations are planned improvements.
+> Note: the current version prioritizes an end-to-end topic discovery and academic report loop: propose directions, retrieve evidence, synthesize findings, evaluate quality, and edit the report. Advanced citation grounding, PDF ingestion, vector RAG, and full MCP tool execution remain planned improvements.
 
 ## Quick Start
 
@@ -69,12 +70,17 @@ Start from the example:
 cp .env.example .env
 ```
 
-Then fill in at least one working LLM config (example):
+Then fill in at least one OpenAI-compatible LLM config. Example for DeepSeek:
 
 ```ini
-BASIC_MODEL__MODEL=
-BASIC_MODEL__API_KEY=
-# BASIC_MODEL__BASE_URL=https://api.openai.com/v1
+BASIC_MODEL__MODEL=deepseek-chat
+BASIC_MODEL__API_KEY=sk-your-deepseek-api-key
+BASIC_MODEL__BASE_URL=https://api.deepseek.com
+
+# Optional reasoning model for deep-thinking mode
+# REASONING_MODEL__MODEL=deepseek-reasoner
+# REASONING_MODEL__API_KEY=sk-your-deepseek-api-key
+# REASONING_MODEL__BASE_URL=https://api.deepseek.com
 ```
 
 > Note: `.env` usually contains secrets. Do not commit it to a public repo.
@@ -117,9 +123,10 @@ npm run dev:web
 - Academic RAG upgrades: chunking, indexing, vector retrieval, reranking, and metadata filtering
 - PDF paper ingestion, section-aware parsing, and bibliography extraction
 - Citation grounding: bind report claims to concrete source excerpts
-- Academic search tools: arXiv, Semantic Scholar, CrossRef, BibTeX workflows
-- Evaluation suite for plan quality, evidence coverage, citation accuracy, and hallucination risk
-- More complete MCP tool discovery and workflow integration
+- More academic search integrations: Semantic Scholar, CrossRef, and BibTeX workflows
+- Stronger evaluation suite for plan quality, evidence coverage, citation accuracy, and hallucination risk
+- Full MCP tool discovery, safe execution, and workflow integration
+- Optional TTS provider integration for podcast/audio report generation
 
 ## Acknowledgments
 
