@@ -253,17 +253,6 @@ function appendMessage(message: Message) {
   useStore.getState().appendMessage(message);
 }
 
-function updateMessage(message: Message) {
-  if (
-    getOngoingResearchId() &&
-    message.agent === "reporter" &&
-    !message.isStreaming
-  ) {
-    useStore.getState().setOngoingResearch(null);
-  }
-  useStore.getState().updateMessage(message);
-}
-
 function getOngoingResearchId() {
   return useStore.getState().ongoingResearchId;
 }
@@ -284,14 +273,17 @@ function appendResearch(researchId: string) {
       break;
     }
   }
-  const messageIds = [researchId];
-  messageIds.unshift(planMessage!.id);
+  if (!planMessage) {
+    return;
+  }
+
+  const messageIds = [planMessage.id, researchId];
   useStore.setState({
     ongoingResearchId: researchId,
     researchIds: [...useStore.getState().researchIds, researchId],
     researchPlanIds: new Map(useStore.getState().researchPlanIds).set(
       researchId,
-      planMessage!.id,
+      planMessage.id,
     ),
     researchActivityIds: new Map(useStore.getState().researchActivityIds).set(
       researchId,

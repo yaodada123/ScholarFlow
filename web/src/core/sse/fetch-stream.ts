@@ -89,7 +89,7 @@ function parseEvent(chunk: string) {
     if (key === "event") {
       resultEvent = value;
     } else if (key === "data") {
-      resultData = value;
+      resultData = resultData === null ? value : `${resultData}\n${value}`;
     }
   }
   if (resultEvent === "message" && resultData === null) {

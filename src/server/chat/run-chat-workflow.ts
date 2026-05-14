@@ -685,7 +685,8 @@ export async function* runChatWorkflow(params: {
       store.set(next);
     }
 
-    const shouldRun = next.autoAcceptedPlan || s.interruptFeedback === "accepted";
+    const reachedMaxPlanIterations = next.planIterations >= next.maxPlanIterations;
+    const shouldRun = next.autoAcceptedPlan || s.interruptFeedback === "accepted" || reachedMaxPlanIterations;
     if (!shouldRun) {
       return { plannerShouldInterrupt: true, done: "interrupt_ready" as const };
     }

@@ -4,8 +4,10 @@
 import { createImageUpload } from "novel";
 import { toast } from "sonner";
 
+import { resolveServiceURL } from "~/core/api/resolve-service-url";
+
 const onUpload = (file: File) => {
-  const promise = fetch("/api/upload", {
+  const promise = fetch(resolveServiceURL("upload"), {
     method: "POST",
     headers: {
       "content-type": file?.type || "application/octet-stream",
