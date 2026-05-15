@@ -9,6 +9,15 @@ export type LlmConfig = {
   timeoutMs?: number;
 };
 
+export type EmbeddingModelConfig = {
+  model: string;
+  apiKey?: string;
+  baseUrl?: string;
+  timeoutMs?: number;
+  batchSize?: number;
+  dimensions?: number;
+};
+
 function readPrefixedEnv(prefix: string): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(process.env)) {
@@ -45,6 +54,27 @@ export function loadLlmConfig(type: LlmType): LlmConfig | null {
     ...(temperature != null ? { temperature } : {}),
     ...(maxTokens != null ? { maxTokens } : {}),
     ...(timeoutMs != null ? { timeoutMs } : {}),
+  };
+}
+
+export function loadEmbeddingConfig(): EmbeddingModelConfig | null {
+  const env = readPrefixedEnv("EMBEDDING_MODEL__");
+  const model = env.model;
+  if (!model) return null;
+
+  const apiKey = env.api_key;
+  const baseUrl = env.base_url ?? env.api_base;
+  const timeoutMs = toNumber(env.timeout ?? env.timeout_ms);
+  const batchSize = toNumber(env.batch_size);
+  const dimensions = toNumber(env.dimensions);
+
+  return {
+    model,
+    ...(apiKey ? { apiKey } : {}),
+    ...(baseUrl ? { baseUrl } : {}),
+    ...(timeoutMs != null ? { timeoutMs } : {}),
+    ...(batchSize != null ? { batchSize } : {}),
+    ...(dimensions != null ? { dimensions } : {}),
   };
 }
 

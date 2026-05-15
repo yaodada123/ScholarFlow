@@ -1,0 +1,245 @@
+import { createHash } from "node:crypto";
+import path from "node:path";
+import { readFile, stat } from "node:fs/promises";
+import * as lancedb from "@lancedb/lancedb";
+import { loadEmbeddingConfig } from "../llm/env-models.js";
+import { OpenAICompatibleEmbeddingClient } from "../llm/openai-compatible-embedding.js";
+import { chunkText } from "./chunk.js";
+import { loadRagConfig } from "./config.js";
+const ragDir = path.resolve(process.cwd(), "data", "rag");
+let connectionPromise = null;
+let tablePromise = null;
+function sanitizeFilename(input) {
+    const base = path.basename(input ?? "").replaceAll("\0", "");
+    const cleaned = base.replaceAll(/[\\/]/g, "_").trim();
+    if (!cleaned)
+        return "upload.txt";
+    return cleaned.slice(0, 200);
+}
+function isAllowedRagFilename(filename) {
+    const ext = path.extname(filename).toLowerCase();
+    return ext === ".md" || ext === ".txt";
+}
+function localFilenameFromUri(uri) {
+    if (!uri.startsWith("rag://local/"))
+        return null;
+    const withoutFragment = uri.slice("rag://local/".length).split(/[?#]/, 1)[0] ?? "";
+    const decoded = (() => {
+        try {
+            return decodeURIComponent(withoutFragment);
+        }
+        catch {
+            return withoutFragment;
+        }
+    })();
+    const filename = sanitizeFilename(decoded);
+    if (!isAllowedRagFilename(filename))
+        return null;
+    return filename;
+}
+function sqlString(value) {
+    return `'${value.replaceAll("'", "''")}'`;
+}
+function hashText(text) {
+    return createHash("sha256").update(text).digest("hex");
+}
+function getEmbeddingClient() {
+    const cfg = loadEmbeddingConfig();
+    if (!cfg)
+        return null;
+    return {
+        client: new OpenAICompatibleEmbeddingClient(cfg),
+        batchSize: Math.max(1, Math.min(256, Math.floor(cfg.batchSize ?? 64))),
+    };
+}
+async function embedBatches(texts) {
+    const embedding = getEmbeddingClient();
+    if (!embedding)
+        throw new Error("Embedding model is not configured");
+    const out = [];
+    for (let i = 0; i < texts.length; i += embedding.batchSize) {
+        const batch = texts.slice(i, i + embedding.batchSize);
+        out.push(...(await embedding.client.embedTexts({ texts: batch })));
+    }
+    if (out.length !== texts.length)
+        throw new Error("Embedding response count did not match input count");
+    return out;
+}
+async function embedQuery(text, signal) {
+    const embedding = getEmbeddingClient();
+    if (!embedding)
+        throw new Error("Embedding model is not configured");
+    return await embedding.client.embedQuery({ text, ...(signal ? { signal } : {}) });
+}
+async function getConnection() {
+    if (!connectionPromise) {
+        const cfg = loadRagConfig();
+        connectionPromise = lancedb.connect(path.resolve(process.cwd(), cfg.lanceDbUri));
+    }
+    return await connectionPromise;
+}
+async function tableExists(conn, tableName) {
+    const names = await conn.tableNames();
+    return names.includes(tableName);
+}
+async function openTableIfExists() {
+    const cfg = loadRagConfig();
+    const conn = await getConnection();
+    if (!(await tableExists(conn, cfg.lanceDbTable)))
+        return null;
+    return await conn.openTable(cfg.lanceDbTable);
+}
+async function getExistingTable() {
+    if (tablePromise) {
+        const cached = await tablePromise;
+        if (cached)
+            return cached;
+    }
+    const table = await openTableIfExists();
+    if (table)
+        tablePromise = Promise.resolve(table);
+    return table;
+}
+async function getOrCreateTable(rows) {
+    const cfg = loadRagConfig();
+    const existing = await getExistingTable();
+    if (existing)
+        return existing;
+    if (rows.length === 0)
+        throw new Error("Cannot create LanceDB table without rows");
+    const conn = await getConnection();
+    const table = await conn.createTable(cfg.lanceDbTable, rows, { existOk: true });
+    tablePromise = Promise.resolve(table);
+    return table;
+}
+async function hasCurrentRows(params) {
+    const count = await params.table.countRows(`resource_uri = ${sqlString(params.resourceUri)} AND content_hash = ${sqlString(params.contentHash)}`);
+    return count > 0;
+}
+export async function indexLocalResource(params) {
+    const filename = sanitizeFilename(params.filename);
+    if (!isAllowedRagFilename(filename))
+        return;
+    const filePath = path.join(ragDir, filename);
+    const [content, info] = await Promise.all([readFile(filePath, { encoding: "utf8" }), stat(filePath)]);
+    const text = content.replace(/\r\n/g, "\n").trim();
+    if (!text)
+        return;
+    const cfg = loadRagConfig();
+    const contentHash = hashText(text);
+    const table = await getExistingTable();
+    if (table && (await hasCurrentRows({ table, resourceUri: params.uri, contentHash }))) {
+        await table
+            .delete(`resource_uri = ${sqlString(params.uri)} AND content_hash != ${sqlString(contentHash)}`)
+            .catch(() => undefined);
+        return;
+    }
+    const chunks = chunkText({ text, chunkSize: cfg.chunkSize, chunkOverlap: cfg.chunkOverlap });
+    if (chunks.length === 0)
+        return;
+    const embeddings = await embedBatches(chunks.map((chunk) => chunk.text));
+    const indexedAt = new Date().toISOString();
+    const rows = chunks.map((chunk, index) => ({
+        id: `${params.uri}#${contentHash}#${chunk.index}`,
+        resource_uri: params.uri,
+        title: params.title,
+        description: params.description ?? "",
+        filename,
+        chunk_index: chunk.index,
+        text: chunk.text,
+        vector: embeddings[index] ?? [],
+        content_hash: contentHash,
+        file_size: info.size,
+        file_mtime_ms: info.mtimeMs,
+        indexed_at: indexedAt,
+    }));
+    if (rows.some((row) => row.vector.length === 0))
+        throw new Error("Embedding response contained an empty vector");
+    const target = await getOrCreateTable(rows);
+    if (target !== table)
+        return;
+    await target.add(rows);
+    await target
+        .delete(`resource_uri = ${sqlString(params.uri)} AND content_hash != ${sqlString(contentHash)}`)
+        .catch(() => undefined);
+}
+export async function ensureResourcesIndexed(params) {
+    for (const resource of params.resources) {
+        const filename = localFilenameFromUri(resource.uri);
+        if (!filename)
+            continue;
+        await indexLocalResource({
+            filename,
+            uri: resource.uri,
+            title: resource.title ?? filename,
+            description: resource.description,
+        });
+    }
+}
+function clipText(text, maxChars) {
+    if (text.length <= maxChars)
+        return text;
+    return `${text.slice(0, Math.max(0, maxChars))}\n…`;
+}
+function scoreFromDistance(distance) {
+    if (typeof distance !== "number" || !Number.isFinite(distance))
+        return 0;
+    return 1 / (1 + Math.max(0, distance));
+}
+export async function searchIndexedResources(params) {
+    const query = params.query.trim();
+    if (!query || params.resources.length === 0 || params.limit <= 0 || params.maxExcerptChars <= 0)
+        return [];
+    await ensureResourcesIndexed({ resources: params.resources });
+    const table = await getExistingTable();
+    if (!table)
+        return [];
+    const selectedUris = params.resources.map((r) => r.uri);
+    const allowedUris = new Set(selectedUris);
+    const where = `resource_uri IN (${selectedUris.map(sqlString).join(", ")})`;
+    const queryVector = await embedQuery(query, params.signal);
+    const oversampleLimit = Math.max(params.limit * 20, params.limit, 20);
+    const rows = (await table
+        .vectorSearch(queryVector)
+        .where(where)
+        .limit(Math.min(100, oversampleLimit))
+        .select(["resource_uri", "title", "description", "chunk_index", "text", "_distance"])
+        .toArray());
+    const grouped = new Map();
+    for (const row of rows) {
+        if (!row.resource_uri || !allowedUris.has(row.resource_uri) || !row.text)
+            continue;
+        const score = scoreFromDistance(row._distance);
+        const existing = grouped.get(row.resource_uri);
+        const chunk = { text: row.text, chunkIndex: row.chunk_index ?? 0, score };
+        if (existing) {
+            existing.chunks.push(chunk);
+            existing.score = Math.max(existing.score, score);
+            continue;
+        }
+        grouped.set(row.resource_uri, {
+            title: row.title ?? row.resource_uri,
+            description: row.description ?? "",
+            chunks: [chunk],
+            score,
+        });
+    }
+    const maxResources = Math.max(1, Math.min(params.limit, grouped.size || params.limit));
+    const maxPerResource = Math.max(1, Math.floor(params.maxExcerptChars / maxResources));
+    return [...grouped.entries()]
+        .sort((a, b) => b[1].score - a[1].score)
+        .slice(0, params.limit)
+        .map(([uri, group]) => {
+        const excerpt = clipText(group.chunks
+            .sort((a, b) => b.score - a.score)
+            .map((chunk) => `[chunk ${chunk.chunkIndex}]\n${chunk.text}`)
+            .join("\n\n---\n\n"), maxPerResource);
+        return {
+            title: group.title,
+            uri,
+            ...(group.description ? { description: group.description } : {}),
+            excerpt,
+            score: group.score,
+        };
+    });
+}

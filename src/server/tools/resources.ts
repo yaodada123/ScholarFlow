@@ -2,6 +2,8 @@ import path from "node:path";
 import { readFile } from "node:fs/promises";
 
 import type { Resource } from "../schemas.js";
+import { loadRagConfig, isLanceDbEnabled } from "../rag/config.js";
+import { searchIndexedResources } from "../rag/lancedb-store.js";
 
 export type RetrievedResource = {
   title: string;
@@ -59,14 +61,13 @@ async function tryReadLocalExcerpt(params: { uri: string; maxChars: number }): P
   }
 }
 
-export async function retrieveResources(params: {
+async function retrieveResourcesLocalFallback(params: {
   query: string;
   resources: Resource[];
   limit: number;
-  maxExcerptChars?: number;
+  maxExcerptChars: number;
 }): Promise<RetrievedResource[]> {
   const q = normalize(params.query);
-  const maxExcerptChars = Math.max(0, Math.min(200_000, params.maxExcerptChars ?? 12_000));
   const scored = params.resources
     .map((r) => {
       const hay = normalize(`${r.title ?? ""} ${r.description ?? ""} ${r.uri ?? ""}`);
@@ -87,7 +88,7 @@ export async function retrieveResources(params: {
   return await Promise.all(
     chosen.map(async ({ r, score }) => {
       const excerpt =
-        maxExcerptChars > 0 ? await tryReadLocalExcerpt({ uri: r.uri, maxChars: maxExcerptChars }) : null;
+        params.maxExcerptChars > 0 ? await tryReadLocalExcerpt({ uri: r.uri, maxChars: params.maxExcerptChars }) : null;
       return {
         title: r.title ?? r.uri,
         uri: r.uri,
@@ -97,4 +98,31 @@ export async function retrieveResources(params: {
       };
     }),
   );
+}
+
+export async function retrieveResources(params: {
+  query: string;
+  resources: Resource[];
+  limit: number;
+  maxExcerptChars?: number;
+}): Promise<RetrievedResource[]> {
+  const ragConfig = loadRagConfig();
+  const maxExcerptChars = Math.max(0, Math.min(200_000, params.maxExcerptChars ?? ragConfig.maxContextChars));
+  const fallbackParams = { ...params, maxExcerptChars };
+
+  if (isLanceDbEnabled() && params.resources.length > 0) {
+    try {
+      const vectorResults = await searchIndexedResources({
+        query: params.query,
+        resources: params.resources,
+        limit: params.limit,
+        maxExcerptChars,
+      });
+      if (vectorResults.length > 0) return vectorResults;
+    } catch (e) {
+      console.warn("[rag] LanceDB retrieval failed; falling back to local excerpts", e);
+    }
+  }
+
+  return await retrieveResourcesLocalFallback(fallbackParams);
 }

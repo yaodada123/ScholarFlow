@@ -2,14 +2,18 @@ import { randomUUID } from "node:crypto";
 import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
 import { loadLlmConfig } from "../llm/env-models.js";
 import { OpenAICompatibleClient } from "../llm/openai-compatible.js";
+import { academicResultsToToolResult, academicSearch, formatAcademicResults } from "../tools/academic-search.js";
 import { retrieveResources } from "../tools/resources.js";
 import { webSearch } from "../tools/web-search.js";
-import { buildFallbackPlan, buildPlannerEditPrompt, buildPlannerPrompt, buildReporterPrompt, safeParsePlan, } from "../workflow.js";
+import { buildFallbackPlan, buildPlannerEditPrompt, buildPlannerPrompt, buildReporterPrompt, ensureTopicPlanFields, safeParsePlan, } from "../workflow.js";
 function newMessageId() {
     return `run-${randomUUID()}`;
 }
 function newToolCallId() {
     return `call_${randomUUID().replace(/-/g, "")}`;
+}
+function stripThinkTags(text) {
+    return text.replaceAll("<think>", "").replaceAll("</think>", "");
 }
 function pickLlmConfig(params) {
     if (params.enableDeepThinking) {
@@ -47,9 +51,9 @@ function isLikelyChitChat(userText) {
 }
 function defaultChitChatReply(params) {
     if (isChineseLocale(params.locale)) {
-        return "你好！我在这里。你想聊点什么，还是需要我帮你做检索/分析/写作？";
+        return "你好！我是 ScholarFlow，一个学术研究助手。你可以给我一个研究问题，或上传论文/笔记让我帮你规划研究、整理证据并生成报告。";
     }
-    return "Hi! How can I help you today?";
+    return "Hi! I'm ScholarFlow, an academic research assistant. Share a research question or upload papers/notes, and I can help plan the research, retrieve evidence, and draft a structured report.";
 }
 function tryParseJsonObject(text) {
     try {
@@ -86,6 +90,22 @@ function parseCoordinatorDecision(text) {
         return null;
     return { action: "direct_response", message };
 }
+function extractObservationSources(observations) {
+    const sources = [];
+    const seen = new Set();
+    const sourcePattern = /^- \[\d+\] (.+?) \((https?:\/\/[^)]+)\)/gm;
+    for (const observation of observations) {
+        for (const match of observation.matchAll(sourcePattern)) {
+            const title = match[1]?.trim();
+            const uri = match[2]?.trim();
+            if (!title || !uri || seen.has(uri))
+                continue;
+            seen.add(uri);
+            sources.push({ title, uri });
+        }
+    }
+    return sources;
+}
 async function decideCoordinatorAction(params) {
     if (!params.llm) {
         if (isLikelyChitChat(params.userText)) {
@@ -96,9 +116,9 @@ async function decideCoordinatorAction(params) {
         }
         return { action: "handoff_to_planner" };
     }
-    const system = "You are DeerFlow Coordinator. Decide whether to respond directly or hand off to the planner. " +
+    const system = "You are ScholarFlow Coordinator, an academic research assistant. Decide whether to respond directly or hand off to the planner. " +
         "You MUST respond directly for greetings, small talk, identity/capability questions (e.g., 'who are you', 'what can you do'). " +
-        "You MUST hand off for research/factual/information requests. " +
+        "You MUST hand off for academic research, literature review, factual analysis, source-grounded writing, or information requests. " +
         'Output ONLY valid JSON (no markdown). Schema: {"action":"direct_response"|"handoff_to_planner","message"?:string}. ' +
         "When action=direct_response, message is required and must be in the user's language.";
     const user = `Locale: ${params.locale}\nUser message: ${params.userText}`;
@@ -220,6 +240,33 @@ export async function* runChatWorkflow(params) {
         if (s.isFeedback) {
             return { coordinatorAction: "handoff_to_planner" };
         }
+        if (s.resources.length > 0) {
+            const coordinatorId = newMessageId();
+            const content = isChineseLocale(s.locale)
+                ? "收到。我会先制定一个学术研究计划，然后检索相关资料并撰写结构化研究报告。"
+                : "Got it. I'll draft an academic research plan first, then retrieve evidence and write a structured research report.";
+            emit(config, {
+                type: "message_chunk",
+                data: {
+                    thread_id: s.threadId,
+                    id: coordinatorId,
+                    agent: "coordinator",
+                    role: "assistant",
+                    content,
+                },
+            });
+            emit(config, {
+                type: "message_chunk",
+                data: {
+                    thread_id: s.threadId,
+                    id: coordinatorId,
+                    agent: "coordinator",
+                    role: "assistant",
+                    finish_reason: "stop",
+                },
+            });
+            return { coordinatorAction: "handoff_to_planner" };
+        }
         const decision = await decideCoordinatorAction({
             llm,
             locale: s.locale,
@@ -251,8 +298,8 @@ export async function* runChatWorkflow(params) {
             return { coordinatorAction: "direct_response", done: "direct_response" };
         }
         const content = isChineseLocale(s.locale)
-            ? "收到。我会先制定一个研究计划，然后开始检索与撰写报告。"
-            : "Got it. I'll draft a research plan first, then gather sources and write up the report.";
+            ? "收到。我会先制定一个学术研究计划，然后检索相关资料并撰写结构化研究报告。"
+            : "Got it. I'll draft an academic research plan first, then retrieve evidence and write a structured research report.";
         emit(config, {
             type: "message_chunk",
             data: {
@@ -281,25 +328,30 @@ export async function* runChatWorkflow(params) {
             return {};
         if (!s.enableBackgroundInvestigation || !s.enableWebSearch)
             return {};
-        const toolCallId = newToolCallId();
+        const academicToolCallId = newToolCallId();
+        const webToolCallId = newToolCallId();
         const researcherId = newMessageId();
         const toolCalls = [
             {
                 type: "tool_call",
-                id: toolCallId,
+                id: academicToolCallId,
+                name: "academic_search",
+                args: { query: s.researchTopic, max_results: s.maxSearchResults },
+            },
+            {
+                type: "tool_call",
+                id: webToolCallId,
                 name: "web_search",
                 args: { query: s.researchTopic, max_results: s.maxSearchResults },
             },
         ];
-        const toolCallChunks = [
-            {
-                type: "tool_call_chunk",
-                index: 0,
-                id: toolCallId,
-                name: "web_search",
-                args: JSON.stringify(toolCalls[0].args),
-            },
-        ];
+        const toolCallChunks = toolCalls.map((toolCall, index) => ({
+            type: "tool_call_chunk",
+            index,
+            id: toolCall.id,
+            name: toolCall.name,
+            args: JSON.stringify(toolCall.args),
+        }));
         emit(config, {
             type: "tool_calls",
             data: {
@@ -321,21 +373,20 @@ export async function* runChatWorkflow(params) {
                 finish_reason: "tool_calls",
             },
         });
-        let content = "";
+        let academicText = "";
+        let academicToolResult = "[]";
         try {
-            const results = await webSearch({
+            const results = await academicSearch({
                 query: s.researchTopic,
                 maxResults: s.maxSearchResults,
                 ...(config?.signal ? { signal: config.signal } : {}),
             });
-            content = results.length
-                ? results
-                    .map((r, i) => `- [${i + 1}] ${r.title} (${r.url})${r.content ? `\n  ${r.content}` : ""}`)
-                    .join("\n")
-                : "(no search results)";
+            academicText = formatAcademicResults(results);
+            academicToolResult = academicResultsToToolResult(results);
         }
         catch (e) {
-            content = e instanceof Error ? e.message : String(e);
+            academicText = e instanceof Error ? e.message : String(e);
+            academicToolResult = JSON.stringify([{ type: "page", title: academicText, url: "", content: "" }]);
         }
         emit(config, {
             type: "tool_call_result",
@@ -344,12 +395,48 @@ export async function* runChatWorkflow(params) {
                 id: researcherId,
                 agent: "researcher",
                 role: "tool",
-                tool_call_id: toolCallId,
-                content,
+                tool_call_id: academicToolCallId,
+                content: academicToolResult,
             },
         });
-        store.set({ ...s, backgroundInvestigationResults: content });
-        return { backgroundInvestigationResults: content };
+        let webText = "";
+        let webToolResult = "[]";
+        try {
+            const results = await webSearch({
+                query: s.researchTopic,
+                maxResults: s.maxSearchResults,
+                ...(config?.signal ? { signal: config.signal } : {}),
+            });
+            webText = results.length
+                ? results
+                    .map((r, i) => `- [${i + 1}] ${r.title} (${r.url})${r.content ? `\n  ${r.content}` : ""}`)
+                    .join("\n")
+                : "(no web search results)";
+            webToolResult = JSON.stringify(results.map((r) => ({
+                type: "page",
+                title: r.title,
+                url: r.url,
+                content: r.content ?? "",
+            })));
+        }
+        catch (e) {
+            webText = e instanceof Error ? e.message : String(e);
+            webToolResult = JSON.stringify([{ type: "page", title: webText, url: "", content: "" }]);
+        }
+        emit(config, {
+            type: "tool_call_result",
+            data: {
+                thread_id: s.threadId,
+                id: researcherId,
+                agent: "researcher",
+                role: "tool",
+                tool_call_id: webToolCallId,
+                content: webToolResult,
+            },
+        });
+        const investigationText = [`Academic literature search:\n${academicText}`, `Web search:\n${webText}`].join("\n\n");
+        store.set({ ...s, backgroundInvestigationResults: investigationText });
+        return { backgroundInvestigationResults: investigationText };
     };
     const plannerNode = async (s, config) => {
         const shouldPlan = !s.interruptFeedback || s.interruptFeedback === "edit_plan";
@@ -439,17 +526,7 @@ export async function* runChatWorkflow(params) {
                         });
                     }
                     if (delta.content) {
-                        fullText += delta.content;
-                        emit(config, {
-                            type: "message_chunk",
-                            data: {
-                                thread_id: next.threadId,
-                                id: plannerId,
-                                agent: "planner",
-                                role: "assistant",
-                                content: delta.content,
-                            },
-                        });
+                        fullText += stripThinkTags(delta.content);
                     }
                 }
             }
@@ -462,29 +539,31 @@ export async function* runChatWorkflow(params) {
                         id: plannerId,
                         agent: "planner",
                         role: "assistant",
-                        content: `\n\n[planner_error] ${message}`,
+                        reasoning_content: `Planner stream failed: ${message}`,
                     },
                 });
             }
-            const parsedPlan = safeParsePlan(fullText) ??
-                buildFallbackPlan({
-                    query: next.researchTopic,
-                    maxSteps: next.maxStepNum,
-                    enableWebSearch: next.enableWebSearch,
-                });
-            if (!safeParsePlan(fullText)) {
-                const json = JSON.stringify(parsedPlan, null, 2);
-                emit(config, {
-                    type: "message_chunk",
-                    data: {
-                        thread_id: next.threadId,
-                        id: plannerId,
-                        agent: "planner",
-                        role: "assistant",
-                        content: `\n\n${json}`,
-                    },
-                });
-            }
+            const parsedPlan = ensureTopicPlanFields({
+                plan: safeParsePlan(fullText) ??
+                    buildFallbackPlan({
+                        query: next.researchTopic,
+                        maxSteps: next.maxStepNum,
+                        enableWebSearch: next.enableWebSearch,
+                    }),
+                query: next.researchTopic,
+                enableWebSearch: next.enableWebSearch,
+            });
+            const json = JSON.stringify(parsedPlan, null, 2);
+            emit(config, {
+                type: "message_chunk",
+                data: {
+                    thread_id: next.threadId,
+                    id: plannerId,
+                    agent: "planner",
+                    role: "assistant",
+                    content: json,
+                },
+            });
             emit(config, {
                 type: "message_chunk",
                 data: {
@@ -498,7 +577,8 @@ export async function* runChatWorkflow(params) {
             next = { ...next, currentPlan: parsedPlan, planIterations: next.planIterations + 1 };
             store.set(next);
         }
-        const shouldRun = next.autoAcceptedPlan || s.interruptFeedback === "accepted";
+        const reachedMaxPlanIterations = next.planIterations >= next.maxPlanIterations;
+        const shouldRun = next.autoAcceptedPlan || s.interruptFeedback === "accepted" || reachedMaxPlanIterations;
         if (!shouldRun) {
             return { plannerShouldInterrupt: true, done: "interrupt_ready" };
         }
@@ -595,29 +675,38 @@ export async function* runChatWorkflow(params) {
     }
     const researcherNode = async (s, config) => {
         const researcherId = newMessageId();
-        const retrieved = retrieveResources({
+        const retrieved = await retrieveResources({
             query: s.researchTopic,
             resources: s.resources,
             limit: Math.max(1, Math.min(10, s.maxSearchResults)),
         });
-        const toolCallId = newToolCallId();
+        const retrieveToolCallId = newToolCallId();
+        const academicToolCallId = newToolCallId();
         const toolCalls = [
             {
                 type: "tool_call",
-                id: toolCallId,
+                id: retrieveToolCallId,
                 name: "retrieve_resources",
                 args: { query: s.researchTopic, limit: retrieved.length },
             },
+            ...(s.enableWebSearch
+                ? [
+                    {
+                        type: "tool_call",
+                        id: academicToolCallId,
+                        name: "academic_search",
+                        args: { query: s.researchTopic, max_results: s.maxSearchResults },
+                    },
+                ]
+                : []),
         ];
-        const toolCallChunks = [
-            {
-                type: "tool_call_chunk",
-                index: 0,
-                id: toolCallId,
-                name: "retrieve_resources",
-                args: JSON.stringify(toolCalls[0].args),
-            },
-        ];
+        const toolCallChunks = toolCalls.map((toolCall, index) => ({
+            type: "tool_call_chunk",
+            index,
+            id: toolCall.id,
+            name: toolCall.name,
+            args: JSON.stringify(toolCall.args),
+        }));
         emit(config, {
             type: "tool_calls",
             data: {
@@ -640,8 +729,22 @@ export async function* runChatWorkflow(params) {
             },
         });
         const retrievalText = retrieved
-            .map((r, i) => `- [${i + 1}] ${r.title} (${r.uri})${r.description ? `\n  ${r.description}` : ""}`)
+            .map((r, i) => {
+            const desc = r.description ? `\n  ${r.description}` : "";
+            const excerpt = r.excerpt
+                ? `\n  Content:\n${r.excerpt
+                    .split("\n")
+                    .map((line) => `  ${line}`)
+                    .join("\n")}`
+                : "";
+            return `- [${i + 1}] ${r.title} (${r.uri})${desc}${excerpt}`;
+        })
             .join("\n");
+        const retrievalToolResult = JSON.stringify(retrieved.map((r, i) => ({
+            id: r.uri,
+            title: r.title,
+            content: r.excerpt ?? r.description ?? `Resource ${i + 1}`,
+        })));
         emit(config, {
             type: "tool_call_result",
             data: {
@@ -649,10 +752,46 @@ export async function* runChatWorkflow(params) {
                 id: researcherId,
                 agent: "researcher",
                 role: "tool",
-                tool_call_id: toolCallId,
-                content: retrievalText || "(no resources)",
+                tool_call_id: retrieveToolCallId,
+                content: retrievalToolResult,
             },
         });
+        let academicText = "";
+        if (s.enableWebSearch) {
+            try {
+                const academicResults = await academicSearch({
+                    query: s.researchTopic,
+                    maxResults: s.maxSearchResults,
+                    ...(config?.signal ? { signal: config.signal } : {}),
+                });
+                academicText = formatAcademicResults(academicResults);
+                emit(config, {
+                    type: "tool_call_result",
+                    data: {
+                        thread_id: s.threadId,
+                        id: researcherId,
+                        agent: "researcher",
+                        role: "tool",
+                        tool_call_id: academicToolCallId,
+                        content: academicResultsToToolResult(academicResults),
+                    },
+                });
+            }
+            catch (e) {
+                academicText = e instanceof Error ? e.message : String(e);
+                emit(config, {
+                    type: "tool_call_result",
+                    data: {
+                        thread_id: s.threadId,
+                        id: researcherId,
+                        agent: "researcher",
+                        role: "tool",
+                        tool_call_id: academicToolCallId,
+                        content: JSON.stringify([{ type: "page", title: academicText, url: "", content: "" }]),
+                    },
+                });
+            }
+        }
         emit(config, {
             type: "message_chunk",
             data: {
@@ -666,6 +805,7 @@ export async function* runChatWorkflow(params) {
         const updates = [
             s.backgroundInvestigationResults ? `Background investigation:\n${s.backgroundInvestigationResults}` : null,
             retrievalText ? `Retrieved resources:\n${retrievalText}` : null,
+            academicText ? `Academic literature search:\n${academicText}` : null,
         ].filter((x) => Boolean(x));
         const next = {
             ...s,
@@ -676,7 +816,10 @@ export async function* runChatWorkflow(params) {
     };
     const reporterNode = async (s, config) => {
         const reporterId = newMessageId();
-        const sources = s.resources.map((r) => ({ title: r.title, uri: r.uri }));
+        const sources = [
+            ...s.resources.map((r) => ({ title: r.title, uri: r.uri })),
+            ...extractObservationSources(s.observations),
+        ];
         const style = s.reportStyle;
         const observations = s.observations;
         const planForReport = s.currentPlan ??
@@ -698,7 +841,7 @@ export async function* runChatWorkflow(params) {
                 observations.length ? observations.join("\n\n") : "(none)",
                 "",
                 "## Answer",
-                "LLM is not configured. Set BASIC_MODEL__model and BASIC_MODEL__api_key to enable full reporting.",
+                "LLM is not configured. Set BASIC_MODEL__MODEL and BASIC_MODEL__API_KEY to enable full academic report generation.",
             ].join("\n");
             emit(config, {
                 type: "message_chunk",
@@ -761,6 +904,9 @@ export async function* runChatWorkflow(params) {
                     });
                 }
                 if (delta.content) {
+                    const cleaned = stripThinkTags(delta.content);
+                    if (!cleaned)
+                        continue;
                     emit(config, {
                         type: "message_chunk",
                         data: {
@@ -768,7 +914,7 @@ export async function* runChatWorkflow(params) {
                             id: reporterId,
                             agent: "reporter",
                             role: "assistant",
-                            content: delta.content,
+                            content: cleaned,
                         },
                     });
                 }

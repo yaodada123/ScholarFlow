@@ -18,6 +18,8 @@ import { OpenAICompatibleClient } from "./llm/openai-compatible.js";
 import { runChatWorkflow } from "./chat/run-chat-workflow.js";
 import { ThreadStore } from "./runtime/thread-store.js";
 import { closeSse, setupSse, writeSseEvent } from "./sse.js";
+import { isLanceDbEnabled } from "./rag/config.js";
+import { indexLocalResource } from "./rag/lancedb-store.js";
 
 const EnvSchema = z.object({
   PORT: z.coerce.number().int().positive().default(8000),
@@ -484,7 +486,21 @@ app.post("/api/rag/upload", async (request: FastifyRequest, reply: FastifyReply)
     await unlink(fullPath).catch(() => undefined);
     await rename(tmpPath, fullPath);
 
-    reply.send(buildLocalResource(filename));
+    const resource = buildLocalResource(filename);
+    if (isLanceDbEnabled()) {
+      try {
+        await indexLocalResource({
+          filename,
+          uri: resource.uri,
+          title: resource.title,
+          description: resource.description,
+        });
+      } catch (e) {
+        app.log.warn({ err: e, filename }, "Failed to index RAG upload; local fallback remains available");
+      }
+    }
+
+    reply.send(resource);
     return reply;
   } catch (e) {
     await unlink(tmpPath).catch(() => undefined);

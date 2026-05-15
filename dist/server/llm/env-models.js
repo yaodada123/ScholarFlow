@@ -36,6 +36,25 @@ export function loadLlmConfig(type) {
         ...(timeoutMs != null ? { timeoutMs } : {}),
     };
 }
+export function loadEmbeddingConfig() {
+    const env = readPrefixedEnv("EMBEDDING_MODEL__");
+    const model = env.model;
+    if (!model)
+        return null;
+    const apiKey = env.api_key;
+    const baseUrl = env.base_url ?? env.api_base;
+    const timeoutMs = toNumber(env.timeout ?? env.timeout_ms);
+    const batchSize = toNumber(env.batch_size);
+    const dimensions = toNumber(env.dimensions);
+    return {
+        model,
+        ...(apiKey ? { apiKey } : {}),
+        ...(baseUrl ? { baseUrl } : {}),
+        ...(timeoutMs != null ? { timeoutMs } : {}),
+        ...(batchSize != null ? { batchSize } : {}),
+        ...(dimensions != null ? { dimensions } : {}),
+    };
+}
 export function getConfiguredModels() {
     const result = {};
     const types = ["basic", "reasoning", "vision", "code"];
