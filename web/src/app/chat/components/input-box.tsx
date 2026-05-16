@@ -6,6 +6,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { ArrowUp, FileText, Lightbulb, Paperclip, X } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useCallback, useRef, useState } from "react";
+import { toast } from "sonner";
 
 import { Detective } from "~/components/deer-flow/icons/detective";
 import MessageInput, {
@@ -113,7 +114,10 @@ export function InputBox({
         method: "POST",
         body: formData,
       });
-      if (!response.ok) throw new Error(`Upload failed: ${response.status}`);
+      if (!response.ok) {
+        const error = (await response.json().catch(() => null)) as { detail?: string } | null;
+        throw new Error(error?.detail ?? `Upload failed: ${response.status}`);
+      }
       const resource = (await response.json()) as Resource;
       setAttachedResources((prev) =>
         [...prev, resource].filter(
@@ -121,7 +125,9 @@ export function InputBox({
         ),
       );
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
       console.error("Failed to upload resource:", error);
+      toast.error(message);
     } finally {
       setUploadingResource(false);
       event.target.value = "";
@@ -339,7 +345,7 @@ export function InputBox({
           <input
             ref={fileInputRef}
             type="file"
-            accept=".md,.txt"
+            accept=".md,.txt,.pdf,text/markdown,text/plain,application/pdf"
             className="sr-only"
             onChange={handleUploadResource}
             disabled={uploadingResource}

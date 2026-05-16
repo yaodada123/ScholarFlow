@@ -35,7 +35,7 @@
     "pasteConfigBelow": "Paste your config below and click \"Add\" to add new servers.",
     "rag": {
       "title": "Academic Materials",
-      "description": "Manage your research materials here. Upload Markdown or text files such as papers, notes, and course materials for retrieval.",
+      "description": "Manage your research materials here. Upload Markdown, text, or text-based PDF files such as papers, notes, and course materials for retrieval.",
       "upload": "Upload",
       "uploading": "Uploading...",
       "uploadSuccess": "File uploaded successfully",

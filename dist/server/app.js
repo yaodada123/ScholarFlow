@@ -16,14 +16,15 @@ import { runChatWorkflow } from "./chat/run-chat-workflow.js";
 import { ThreadStore } from "./runtime/thread-store.js";
 import { closeSse, setupSse, writeSseEvent } from "./sse.js";
 import { isLanceDbEnabled } from "./rag/config.js";
+import { buildLocalResource, extractTextFromRagFile, isAllowedRagFilename, RagTextExtractionError, ragDir, sanitizeRagFilename } from "./rag/document-text.js";
 import { indexLocalResource } from "./rag/lancedb-store.js";
 import { listTraceRuns, readLatestTraceRun, readTraceRun, TraceRecorder } from "./trace/recorder.js";
 const EnvSchema = z.object({
-    PORT: z.coerce.number().int().positive().default(8000),
+    PORT: z.coerce.number().int().positive().default(8899),
     ALLOWED_ORIGINS: z
         .string()
         .optional()
-        .default("http://localhost:3000,http://127.0.0.1:3000"),
+        .default("http://localhost:3300,http://127.0.0.1:3300"),
     ENABLE_MCP_SERVER_CONFIGURATION: z
         .preprocess((v) => {
         const s = typeof v === "string" ? v : v == null ? "" : String(v);
@@ -86,7 +87,6 @@ app.options("/api/chat/stream", async (request, reply) => {
 });
 app.get("/healthz", async () => ({ ok: true }));
 const threadStore = new ThreadStore();
-const ragDir = path.resolve(process.cwd(), "data", "rag");
 function toDetailError(message) {
     return { detail: message };
 }
@@ -97,16 +97,8 @@ function sanitizeFilename(input) {
         return "upload.txt";
     return cleaned.slice(0, 200);
 }
-function buildLocalResource(filename) {
-    const safeName = sanitizeFilename(filename);
-    return { uri: `rag://local/${safeName}`, title: safeName, description: "" };
-}
 async function ensureRagDir() {
     await mkdir(ragDir, { recursive: true });
-}
-function isAllowedRagFilename(filename) {
-    const ext = path.extname(filename).toLowerCase();
-    return ext === ".md" || ext === ".txt";
 }
 const uploadDir = path.resolve(process.cwd(), "data", "uploads");
 const PromptEnhanceRequestSchema = z.object({
@@ -410,9 +402,9 @@ app.post("/api/rag/upload", async (request, reply) => {
         return reply;
     }
     const originalName = typeof uploaded.filename === "string" ? uploaded.filename : "upload.txt";
-    const filename = sanitizeFilename(originalName);
+    const filename = sanitizeRagFilename(originalName);
     if (!isAllowedRagFilename(filename)) {
-        reply.code(400).send(toDetailError("Only .md and .txt files are supported"));
+        reply.code(400).send(toDetailError("Only .md, .txt, and text-based .pdf files are supported"));
         return reply;
     }
     const fullPath = path.join(ragDir, filename);
@@ -426,6 +418,17 @@ app.post("/api/rag/upload", async (request, reply) => {
             reply.code(400).send(toDetailError("Cannot upload an empty file"));
             return reply;
         }
+        let extractedText = "";
+        try {
+            extractedText = (await extractTextFromRagFile(tmpPath, filename)).text;
+        }
+        catch (e) {
+            await unlink(tmpPath).catch(() => undefined);
+            const message = e instanceof Error ? e.message : String(e);
+            const status = e instanceof RagTextExtractionError ? 400 : 500;
+            reply.code(status).send(toDetailError(message));
+            return reply;
+        }
         await mkdir(path.dirname(fullPath), { recursive: true });
         await unlink(fullPath).catch(() => undefined);
         await rename(tmpPath, fullPath);
@@ -437,6 +440,7 @@ app.post("/api/rag/upload", async (request, reply) => {
                     uri: resource.uri,
                     title: resource.title,
                     description: resource.description,
+                    extractedText,
                 });
             }
             catch (e) {

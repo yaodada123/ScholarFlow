@@ -1,38 +1,9 @@
 import path from "node:path";
-import { readFile } from "node:fs/promises";
 import { loadRagConfig, isLanceDbEnabled } from "../rag/config.js";
+import { extractTextFromRagFile, localFilenameFromUri, ragDir } from "../rag/document-text.js";
 import { searchIndexedResources } from "../rag/lancedb-store.js";
-const ragDir = path.resolve(process.cwd(), "data", "rag");
 function normalize(text) {
     return text.toLowerCase().replace(/\s+/g, " ").trim();
-}
-function sanitizeFilename(input) {
-    const base = path.basename(input ?? "").replaceAll("\0", "");
-    const cleaned = base.replaceAll(/[\\/]/g, "_").trim();
-    if (!cleaned)
-        return "upload.txt";
-    return cleaned.slice(0, 200);
-}
-function isAllowedRagFilename(filename) {
-    const ext = path.extname(filename).toLowerCase();
-    return ext === ".md" || ext === ".txt";
-}
-function localFilenameFromUri(uri) {
-    if (!uri.startsWith("rag://local/"))
-        return null;
-    const raw = uri.slice("rag://local/".length);
-    const decoded = (() => {
-        try {
-            return decodeURIComponent(raw);
-        }
-        catch {
-            return raw;
-        }
-    })();
-    const filename = sanitizeFilename(decoded);
-    if (!isAllowedRagFilename(filename))
-        return null;
-    return filename;
 }
 async function tryReadLocalExcerpt(params) {
     const filename = localFilenameFromUri(params.uri);
@@ -40,8 +11,7 @@ async function tryReadLocalExcerpt(params) {
         return null;
     const filePath = path.join(ragDir, filename);
     try {
-        const content = await readFile(filePath, { encoding: "utf8" });
-        const text = content.replace(/\r\n/g, "\n");
+        const { text } = await extractTextFromRagFile(filePath, filename);
         const clipped = text.length > params.maxChars ? `${text.slice(0, params.maxChars)}\n…` : text;
         return clipped.trim() ? clipped : null;
     }

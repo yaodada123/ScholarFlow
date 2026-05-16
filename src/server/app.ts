@@ -11,7 +11,7 @@ import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import { z } from "zod";
 
-import { ChatRequestSchema, type Resource } from "./schemas.js";
+import { ChatRequestSchema } from "./schemas.js";
 import { evaluateReportDeterministic, parseLlmEvaluation } from "./evaluation/report-evaluator.js";
 import { getConfiguredModels, loadLlmConfig } from "./llm/env-models.js";
 import { OpenAICompatibleClient } from "./llm/openai-compatible.js";
@@ -19,6 +19,7 @@ import { runChatWorkflow } from "./chat/run-chat-workflow.js";
 import { ThreadStore } from "./runtime/thread-store.js";
 import { closeSse, setupSse, writeSseEvent } from "./sse.js";
 import { isLanceDbEnabled } from "./rag/config.js";
+import { buildLocalResource, extractTextFromRagFile, isAllowedRagFilename, RagTextExtractionError, ragDir, sanitizeRagFilename } from "./rag/document-text.js";
 import { indexLocalResource } from "./rag/lancedb-store.js";
 import { listTraceRuns, readLatestTraceRun, readTraceRun, TraceRecorder } from "./trace/recorder.js";
 
@@ -99,8 +100,6 @@ app.get("/healthz", async () => ({ ok: true }));
 
 const threadStore = new ThreadStore();
 
-const ragDir = path.resolve(process.cwd(), "data", "rag");
-
 function toDetailError(message: string) {
   return { detail: message };
 }
@@ -112,18 +111,8 @@ function sanitizeFilename(input: string): string {
   return cleaned.slice(0, 200);
 }
 
-function buildLocalResource(filename: string): Resource {
-  const safeName = sanitizeFilename(filename);
-  return { uri: `rag://local/${safeName}`, title: safeName, description: "" };
-}
-
 async function ensureRagDir(): Promise<void> {
   await mkdir(ragDir, { recursive: true });
-}
-
-function isAllowedRagFilename(filename: string): boolean {
-  const ext = path.extname(filename).toLowerCase();
-  return ext === ".md" || ext === ".txt";
 }
 
 const uploadDir = path.resolve(process.cwd(), "data", "uploads");
@@ -463,9 +452,9 @@ app.post("/api/rag/upload", async (request: FastifyRequest, reply: FastifyReply)
   }
 
   const originalName = typeof uploaded.filename === "string" ? uploaded.filename : "upload.txt";
-  const filename = sanitizeFilename(originalName);
+  const filename = sanitizeRagFilename(originalName);
   if (!isAllowedRagFilename(filename)) {
-    reply.code(400).send(toDetailError("Only .md and .txt files are supported"));
+    reply.code(400).send(toDetailError("Only .md, .txt, and text-based .pdf files are supported"));
     return reply;
   }
 
@@ -483,6 +472,17 @@ app.post("/api/rag/upload", async (request: FastifyRequest, reply: FastifyReply)
       return reply;
     }
 
+    let extractedText = "";
+    try {
+      extractedText = (await extractTextFromRagFile(tmpPath, filename)).text;
+    } catch (e) {
+      await unlink(tmpPath).catch(() => undefined);
+      const message = e instanceof Error ? e.message : String(e);
+      const status = e instanceof RagTextExtractionError ? 400 : 500;
+      reply.code(status).send(toDetailError(message));
+      return reply;
+    }
+
     await mkdir(path.dirname(fullPath), { recursive: true });
     await unlink(fullPath).catch(() => undefined);
     await rename(tmpPath, fullPath);
@@ -495,6 +495,7 @@ app.post("/api/rag/upload", async (request: FastifyRequest, reply: FastifyReply)
           uri: resource.uri,
           title: resource.title,
           description: resource.description,
+          extractedText,
         });
       } catch (e) {
         app.log.warn({ err: e, filename }, "Failed to index RAG upload; local fallback remains available");

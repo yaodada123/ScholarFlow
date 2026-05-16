@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import path from "node:path";
-import { readFile, stat } from "node:fs/promises";
+import { stat } from "node:fs/promises";
 
 import * as lancedb from "@lancedb/lancedb";
 import type { Connection, Table } from "@lancedb/lancedb";
@@ -10,6 +10,7 @@ import { loadEmbeddingConfig } from "../llm/env-models.js";
 import { OpenAICompatibleEmbeddingClient } from "../llm/openai-compatible-embedding.js";
 import { chunkText } from "./chunk.js";
 import { loadRagConfig } from "./config.js";
+import { extractTextFromRagFile, isAllowedRagFilename, localFilenameFromUri, ragDir, sanitizeRagFilename } from "./document-text.js";
 
 export type VectorSearchResult = {
   title: string;
@@ -38,36 +39,8 @@ type LanceSearchRow = Partial<RagChunkRow> & {
   _distance?: number;
 };
 
-const ragDir = path.resolve(process.cwd(), "data", "rag");
 let connectionPromise: Promise<Connection> | null = null;
 let tablePromise: Promise<Table | null> | null = null;
-
-function sanitizeFilename(input: string): string {
-  const base = path.basename(input ?? "").replaceAll("\0", "");
-  const cleaned = base.replaceAll(/[\\/]/g, "_").trim();
-  if (!cleaned) return "upload.txt";
-  return cleaned.slice(0, 200);
-}
-
-function isAllowedRagFilename(filename: string): boolean {
-  const ext = path.extname(filename).toLowerCase();
-  return ext === ".md" || ext === ".txt";
-}
-
-function localFilenameFromUri(uri: string): string | null {
-  if (!uri.startsWith("rag://local/")) return null;
-  const withoutFragment = uri.slice("rag://local/".length).split(/[?#]/, 1)[0] ?? "";
-  const decoded = (() => {
-    try {
-      return decodeURIComponent(withoutFragment);
-    } catch {
-      return withoutFragment;
-    }
-  })();
-  const filename = sanitizeFilename(decoded);
-  if (!isAllowedRagFilename(filename)) return null;
-  return filename;
-}
 
 function sqlString(value: string): string {
   return `'${value.replaceAll("'", "''")}'`;
@@ -159,13 +132,14 @@ export async function indexLocalResource(params: {
   uri: string;
   title: string;
   description?: string;
+  extractedText?: string;
 }): Promise<void> {
-  const filename = sanitizeFilename(params.filename);
+  const filename = sanitizeRagFilename(params.filename);
   if (!isAllowedRagFilename(filename)) return;
 
   const filePath = path.join(ragDir, filename);
-  const [content, info] = await Promise.all([readFile(filePath, { encoding: "utf8" }), stat(filePath)]);
-  const text = content.replace(/\r\n/g, "\n").trim();
+  const info = await stat(filePath);
+  const text = (params.extractedText ?? (await extractTextFromRagFile(filePath, filename)).text).trim();
   if (!text) return;
 
   const cfg = loadRagConfig();

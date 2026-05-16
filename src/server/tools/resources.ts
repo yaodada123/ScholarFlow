@@ -1,8 +1,8 @@
 import path from "node:path";
-import { readFile } from "node:fs/promises";
 
 import type { Resource } from "../schemas.js";
 import { loadRagConfig, isLanceDbEnabled } from "../rag/config.js";
+import { extractTextFromRagFile, localFilenameFromUri, ragDir } from "../rag/document-text.js";
 import { searchIndexedResources } from "../rag/lancedb-store.js";
 
 export type RetrievedResource = {
@@ -13,37 +13,8 @@ export type RetrievedResource = {
   score: number;
 };
 
-const ragDir = path.resolve(process.cwd(), "data", "rag");
-
 function normalize(text: string): string {
   return text.toLowerCase().replace(/\s+/g, " ").trim();
-}
-
-function sanitizeFilename(input: string): string {
-  const base = path.basename(input ?? "").replaceAll("\0", "");
-  const cleaned = base.replaceAll(/[\\/]/g, "_").trim();
-  if (!cleaned) return "upload.txt";
-  return cleaned.slice(0, 200);
-}
-
-function isAllowedRagFilename(filename: string): boolean {
-  const ext = path.extname(filename).toLowerCase();
-  return ext === ".md" || ext === ".txt";
-}
-
-function localFilenameFromUri(uri: string): string | null {
-  if (!uri.startsWith("rag://local/")) return null;
-  const raw = uri.slice("rag://local/".length);
-  const decoded = (() => {
-    try {
-      return decodeURIComponent(raw);
-    } catch {
-      return raw;
-    }
-  })();
-  const filename = sanitizeFilename(decoded);
-  if (!isAllowedRagFilename(filename)) return null;
-  return filename;
 }
 
 async function tryReadLocalExcerpt(params: { uri: string; maxChars: number }): Promise<string | null> {
@@ -52,8 +23,7 @@ async function tryReadLocalExcerpt(params: { uri: string; maxChars: number }): P
 
   const filePath = path.join(ragDir, filename);
   try {
-    const content = await readFile(filePath, { encoding: "utf8" });
-    const text = content.replace(/\r\n/g, "\n");
+    const { text } = await extractTextFromRagFile(filePath, filename);
     const clipped = text.length > params.maxChars ? `${text.slice(0, params.maxChars)}\n…` : text;
     return clipped.trim() ? clipped : null;
   } catch {

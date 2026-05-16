@@ -87,7 +87,7 @@ export const RAGTab: Tab = () => {
             <input
               ref={fileInputRef}
               type="file"
-              accept=".md,.txt"
+              accept=".md,.txt,.pdf,text/markdown,text/plain,application/pdf"
               className="sr-only"
               onChange={handleUpload}
               disabled={uploading}
@@ -116,7 +116,7 @@ export const RAGTab: Tab = () => {
           </div>
         ) : (
           <ul className="flex flex-col gap-2">
-            {resources.map((resource, index) => (
+            {resources.map((resource) => (
               <li
                 key={resource.uri}
                 className={cn("bg-card flex items-start gap-3 rounded-lg border p-3")}

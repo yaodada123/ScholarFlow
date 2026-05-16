@@ -35,7 +35,7 @@
     "pasteConfigBelow": "将您的配置粘贴到下面，然后点击\"添加\"来添加新服务器。",
     "rag": {
       "title": "学术资料",
-      "description": "在此管理你的研究资料。上传 Markdown 或文本格式的论文、笔记和课程资料以供检索。",
+      "description": "在此管理你的研究资料。上传 Markdown、文本或文本型 PDF 格式的论文、笔记和课程资料以供检索。",
       "upload": "上传",
       "uploading": "上传中...",
       "uploadSuccess": "文件上传成功",
