@@ -23,11 +23,11 @@ import { indexLocalResource } from "./rag/lancedb-store.js";
 import { listTraceRuns, readLatestTraceRun, readTraceRun, TraceRecorder } from "./trace/recorder.js";
 
 const EnvSchema = z.object({
-  PORT: z.coerce.number().int().positive().default(8000),
+  PORT: z.coerce.number().int().positive().default(8899),
   ALLOWED_ORIGINS: z
     .string()
     .optional()
-    .default("http://localhost:3000,http://127.0.0.1:3000"),
+    .default("http://localhost:3300,http://127.0.0.1:3300"),
   ENABLE_MCP_SERVER_CONFIGURATION: z
     .preprocess((v) => {
       const s = typeof v === "string" ? v : v == null ? "" : String(v);
