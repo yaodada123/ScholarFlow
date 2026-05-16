@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { PDFParse } from "pdf-parse";
 
 import type { Resource } from "../schemas.js";
+import { loadPdfOcrConfig, ocrPdf } from "./pdf-ocr.js";
 
 export const ragDir = path.resolve(process.cwd(), "data", "rag");
 
@@ -83,13 +84,39 @@ export async function extractTextFromRagFile(
   }
 
   if (ext === ".pdf") {
-    const result = await extractPdfText(filePath);
-    if (!result.text) {
+    let textExtractionError: unknown;
+    try {
+      const result = await extractPdfText(filePath);
+      if (result.text) {
+        return { text: result.text, sourceType: "pdf", ...(result.pageCount != null ? { pageCount: result.pageCount } : {}) };
+      }
+    } catch (error) {
+      textExtractionError = error;
+    }
+
+    const ocrConfig = loadPdfOcrConfig();
+    if (!ocrConfig.enabled) {
+      if (textExtractionError) throw textExtractionError;
       throw new RagTextExtractionError(
-        "Could not extract selectable text from PDF. Scanned/image-only PDFs are not supported.",
+        "Could not extract selectable text from PDF. Scanned/image-only PDFs require PDF_OCR_ENABLED=true.",
       );
     }
-    return { text: result.text, sourceType: "pdf", ...(result.pageCount != null ? { pageCount: result.pageCount } : {}) };
+
+    try {
+      const ocrResult = await ocrPdf(filePath, ocrConfig);
+      const ocrText = normalizeExtractedText(ocrResult.text);
+      if (!ocrText) {
+        throw new RagTextExtractionError("OCR did not extract readable text from this PDF.");
+      }
+      return {
+        text: ocrText,
+        sourceType: "pdf",
+        ...(ocrResult.pageCount != null ? { pageCount: ocrResult.pageCount } : {}),
+      };
+    } catch (ocrError) {
+      const message = ocrError instanceof Error ? ocrError.message : String(ocrError);
+      throw new RagTextExtractionError(`Failed to extract text from PDF with OCR fallback: ${message}`);
+    }
   }
 
   throw new RagTextExtractionError("Only .md, .txt, and text-based .pdf files are supported.");
