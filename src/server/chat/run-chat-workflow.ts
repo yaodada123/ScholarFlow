@@ -19,6 +19,8 @@ import {
 } from "../workflow.js";
 import type { ThreadStore } from "../runtime/thread-store.js";
 import type { WorkflowState } from "../runtime/types.js";
+import type { TraceRecorder } from "../trace/recorder.js";
+import type { TraceStatus } from "../trace/types.js";
 
 type ChatEvent = {
   type: string;
@@ -219,6 +221,61 @@ function makeBaseState(params: {
   };
 }
 
+function contentPreview(content: unknown): Record<string, unknown> {
+  if (typeof content !== "string") return {};
+  return {
+    content_length: content.length,
+    content_preview: content.slice(0, 300),
+  };
+}
+
+function summarizeToolResult(content: unknown): Record<string, unknown> {
+  if (typeof content !== "string") return {};
+  let count: number | undefined;
+  try {
+    const parsed = JSON.parse(content) as unknown;
+    if (Array.isArray(parsed)) count = parsed.length;
+  } catch {
+    // Ignore non-JSON tool output.
+  }
+  return {
+    content_length: content.length,
+    content_preview: content.slice(0, 300),
+    ...(count != null ? { item_count: count } : {}),
+  };
+}
+
+function summarizeNodeOutput(output: unknown): Record<string, unknown> {
+  if (!output || typeof output !== "object") return {};
+  const obj = output as Record<string, unknown>;
+  return {
+    keys: Object.keys(obj),
+    ...(Array.isArray(obj.observations) ? { observations: obj.observations.length } : {}),
+    ...(obj.done ? { done: obj.done } : {}),
+    ...(typeof obj.plannerShouldInterrupt === "boolean" ? { plannerShouldInterrupt: obj.plannerShouldInterrupt } : {}),
+  };
+}
+
+async function tracedNode<TResult>(
+  trace: TraceRecorder | undefined,
+  params: { spanId: string; name: string; agent: string; input?: unknown; setCurrentSpan: (spanId: string | undefined) => void; currentSpan: string | undefined },
+  fn: () => Promise<TResult>,
+): Promise<TResult> {
+  trace?.spanStarted({ spanId: params.spanId, name: params.name, agent: params.agent, input: params.input });
+  const previousSpan = params.currentSpan;
+  params.setCurrentSpan(params.spanId);
+  try {
+    const result = await fn();
+    trace?.spanEnded({ spanId: params.spanId, name: params.name, agent: params.agent, status: "ok", output: summarizeNodeOutput(result) });
+    return result;
+  } catch (e) {
+    trace?.spanEnded({ spanId: params.spanId, name: params.name, agent: params.agent, status: "error", error: e });
+    throw e;
+  } finally {
+    params.setCurrentSpan(previousSpan);
+  }
+}
+
 function upsertThreadState(params: {
   store: ThreadStore;
   request: ChatRequest;
@@ -276,9 +333,21 @@ export async function* runChatWorkflow(params: {
   request: ChatRequest;
   store: ThreadStore;
   signal?: AbortSignal;
+  trace?: TraceRecorder;
 }): AsyncIterable<ChatEvent> {
-  const { request, store, signal } = params;
+  const { request, store, signal, trace } = params;
   const incomingText = normalizeUserContent(request);
+  let currentSpanId: string | undefined;
+  let runStatus: TraceStatus = "ok";
+  let runEndReason = "completed";
+
+  trace?.runStarted({
+    query: incomingText,
+    resources: request.resources.length,
+    enable_web_search: request.enable_web_search,
+    enable_background_investigation: request.enable_background_investigation,
+    interrupt_feedback: request.interrupt_feedback,
+  });
 
   const isFeedback = request.interrupt_feedback === "accepted" || request.interrupt_feedback === "edit_plan";
   const existing = store.get(request.thread_id);
@@ -289,6 +358,7 @@ export async function* runChatWorkflow(params: {
   const llmCfg = pickLlmConfig({ enableDeepThinking: request.enable_deep_thinking });
   const llm = llmCfg ? new OpenAICompatibleClient(llmCfg) : null;
 
+  try {
   const PlanningState = Annotation.Root({
     threadId: Annotation<string>(),
     locale: Annotation<string>(),
@@ -314,11 +384,81 @@ export async function* runChatWorkflow(params: {
     done: Annotation<PlanningGraphState["done"]>(),
   });
 
+  const recordChatEventAsTrace = (event: ChatEvent) => {
+    const data = event.data;
+    const agent = typeof data.agent === "string" ? data.agent : undefined;
+    if (event.type === "tool_calls" && Array.isArray(data.tool_calls)) {
+      for (const toolCall of data.tool_calls) {
+        if (!toolCall || typeof toolCall !== "object") continue;
+        const tc = toolCall as ToolCall;
+        trace?.toolCallStarted({
+          ...(currentSpanId ? { spanId: currentSpanId } : {}),
+          toolCallId: tc.id,
+          toolName: tc.name,
+          input: tc.args,
+          ...(agent ? { agent } : {}),
+        });
+      }
+      return;
+    }
+
+    if (event.type === "tool_call_result") {
+      const toolCallId = typeof data.tool_call_id === "string" ? data.tool_call_id : undefined;
+      if (toolCallId) {
+        trace?.toolCallEnded({
+          ...(currentSpanId ? { spanId: currentSpanId } : {}),
+          toolCallId,
+          output: summarizeToolResult(data.content),
+          ...(agent ? { agent } : {}),
+        });
+      }
+      return;
+    }
+
+    if (event.type === "message_chunk") {
+      trace?.message({
+        ...(currentSpanId ? { spanId: currentSpanId } : {}),
+        ...(agent ? { agent } : {}),
+        metadata: {
+          id: data.id,
+          role: data.role,
+          finish_reason: data.finish_reason,
+          ...contentPreview(data.content),
+          ...(typeof data.reasoning_content === "string"
+            ? { reasoning_content_length: data.reasoning_content.length }
+            : {}),
+        },
+      });
+      return;
+    }
+
+    if (event.type === "interrupt") {
+      trace?.interrupt({
+        ...(currentSpanId ? { spanId: currentSpanId } : {}),
+        ...(agent ? { agent } : {}),
+        metadata: { id: data.id, options: data.options },
+      });
+    }
+  };
+
   const emit = (config: LangGraphRunnableConfig | undefined, event: ChatEvent) => {
+    recordChatEventAsTrace(event);
     config?.writer?.(event);
   };
 
-  const coordinatorNode = async (s: PlanningGraphState, config?: LangGraphRunnableConfig) => {
+  const coordinatorNode = async (s: PlanningGraphState, config?: LangGraphRunnableConfig) => tracedNode(
+    trace,
+    {
+      spanId: `span_coordinator_${randomUUID()}`,
+      name: "planning.coordinator",
+      agent: "coordinator",
+      input: { isFeedback: s.isFeedback, resources: s.resources.length },
+      currentSpan: currentSpanId,
+      setCurrentSpan: (spanId) => {
+        currentSpanId = spanId;
+      },
+    },
+    async () => {
     if (s.isFeedback) {
       return { coordinatorAction: "handoff_to_planner" as const };
     }
@@ -411,9 +551,22 @@ export async function* runChatWorkflow(params: {
     });
 
     return { coordinatorAction: "handoff_to_planner" as const };
-  };
+    },
+  );
 
-  const backgroundInvestigatorNode = async (s: PlanningGraphState, config?: LangGraphRunnableConfig) => {
+  const backgroundInvestigatorNode = async (s: PlanningGraphState, config?: LangGraphRunnableConfig) => tracedNode(
+    trace,
+    {
+      spanId: `span_background_investigator_${randomUUID()}`,
+      name: "planning.background_investigator",
+      agent: "researcher",
+      input: { enabled: s.enableBackgroundInvestigation && s.enableWebSearch, query: s.researchTopic },
+      currentSpan: currentSpanId,
+      setCurrentSpan: (spanId) => {
+        currentSpanId = spanId;
+      },
+    },
+    async () => {
     const shouldPlan = !s.interruptFeedback || s.interruptFeedback === "edit_plan";
     if (!shouldPlan) return {};
     if (!s.enableBackgroundInvestigation || !s.enableWebSearch) return {};
@@ -534,9 +687,22 @@ export async function* runChatWorkflow(params: {
     store.set({ ...(s as WorkflowState), backgroundInvestigationResults: investigationText });
 
     return { backgroundInvestigationResults: investigationText };
-  };
+    },
+  );
 
-  const plannerNode = async (s: PlanningGraphState, config?: LangGraphRunnableConfig) => {
+  const plannerNode = async (s: PlanningGraphState, config?: LangGraphRunnableConfig) => tracedNode(
+    trace,
+    {
+      spanId: `span_planner_${randomUUID()}`,
+      name: "planning.planner",
+      agent: "planner",
+      input: { isFeedback: s.isFeedback, interruptFeedback: s.interruptFeedback, planIterations: s.planIterations },
+      currentSpan: currentSpanId,
+      setCurrentSpan: (spanId) => {
+        currentSpanId = spanId;
+      },
+    },
+    async () => {
     const shouldPlan = !s.interruptFeedback || s.interruptFeedback === "edit_plan";
     if (!shouldPlan) {
       return { plannerShouldInterrupt: false, done: "none" as const };
@@ -698,9 +864,22 @@ export async function* runChatWorkflow(params: {
       planIterations: next.planIterations,
       backgroundInvestigationResults: next.backgroundInvestigationResults,
     };
-  };
+    },
+  );
 
-  const humanFeedbackNode = async (s: PlanningGraphState, config?: LangGraphRunnableConfig) => {
+  const humanFeedbackNode = async (s: PlanningGraphState, config?: LangGraphRunnableConfig) => tracedNode(
+    trace,
+    {
+      spanId: `span_human_feedback_${randomUUID()}`,
+      name: "planning.human_feedback",
+      agent: "planner",
+      input: { plannerShouldInterrupt: s.plannerShouldInterrupt },
+      currentSpan: currentSpanId,
+      setCurrentSpan: (spanId) => {
+        currentSpanId = spanId;
+      },
+    },
+    async () => {
     if (!s.plannerShouldInterrupt) return {};
     const interruptId = `human_feedback:${randomUUID()}`;
     emit(config, {
@@ -718,7 +897,8 @@ export async function* runChatWorkflow(params: {
       },
     });
     return {};
-  };
+    },
+  );
 
   const planningGraph = new StateGraph(PlanningState)
     .addNode("coordinator", coordinatorNode)
@@ -768,10 +948,12 @@ export async function* runChatWorkflow(params: {
   }
 
   if (finalPlanningState.done === "direct_response") {
+    runEndReason = "direct_response";
     return;
   }
 
   if (finalPlanningState.plannerShouldInterrupt && finalPlanningState.done === "interrupt_ready") {
+    runEndReason = "interrupt_ready";
     return;
   }
 
@@ -789,7 +971,19 @@ export async function* runChatWorkflow(params: {
     store.set(state);
   }
 
-  const researcherNode = async (s: PlanningGraphState, config?: LangGraphRunnableConfig) => {
+  const researcherNode = async (s: PlanningGraphState, config?: LangGraphRunnableConfig) => tracedNode(
+    trace,
+    {
+      spanId: `span_researcher_${randomUUID()}`,
+      name: "execution.researcher",
+      agent: "researcher",
+      input: { query: s.researchTopic, resources: s.resources.length, enableWebSearch: s.enableWebSearch },
+      currentSpan: currentSpanId,
+      setCurrentSpan: (spanId) => {
+        currentSpanId = spanId;
+      },
+    },
+    async () => {
     const researcherId = newMessageId();
     const retrieved = await retrieveResources({
       query: s.researchTopic,
@@ -939,9 +1133,22 @@ export async function* runChatWorkflow(params: {
     store.set(next);
 
     return { observations: next.observations };
-  };
+    },
+  );
 
-  const reporterNode = async (s: PlanningGraphState, config?: LangGraphRunnableConfig) => {
+  const reporterNode = async (s: PlanningGraphState, config?: LangGraphRunnableConfig) => tracedNode(
+    trace,
+    {
+      spanId: `span_reporter_${randomUUID()}`,
+      name: "execution.reporter",
+      agent: "reporter",
+      input: { observations: s.observations.length, resources: s.resources.length, style: s.reportStyle },
+      currentSpan: currentSpanId,
+      setCurrentSpan: (spanId) => {
+        currentSpanId = spanId;
+      },
+    },
+    async () => {
     const reporterId = newMessageId();
     const sources = [
       ...s.resources.map((r) => ({ title: r.title, uri: r.uri })),
@@ -1077,7 +1284,8 @@ export async function* runChatWorkflow(params: {
     });
 
     return {};
-  };
+    },
+  );
 
   const executionGraph = new StateGraph(PlanningState)
     .addNode("researcher", researcherNode)
@@ -1114,4 +1322,13 @@ export async function* runChatWorkflow(params: {
     }
   }
   return;
+  } catch (e) {
+    runStatus = signal?.aborted ? "aborted" : "error";
+    trace?.error(e, currentSpanId ? { spanId: currentSpanId } : {});
+    throw e;
+  } finally {
+    if (signal?.aborted) runStatus = "aborted";
+    trace?.runEnded(runStatus, { reason: runEndReason });
+    await trace?.flush();
+  }
 }

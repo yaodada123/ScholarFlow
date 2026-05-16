@@ -13,6 +13,7 @@
 /prisma/db.sqlite-journal
 db.sqlite
 /data/lancedb
+/data/traces
 
 # next.js
 /.next/

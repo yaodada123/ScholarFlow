@@ -47,6 +47,7 @@ import { useReplay } from "~/core/replay";
 import { closeResearch, getResearchQuery, listenToPodcast, useStore, useSettingsStore } from "~/core/store";
 import { cn } from "~/lib/utils";
 
+import { AgentTraceBlock } from "./agent-trace-block";
 import { EvaluationDialog } from "./evaluation-dialog";
 import { ResearchActivitiesBlock } from "./research-activities-block";
 import { ResearchReportBlock } from "./research-report-block";
@@ -59,6 +60,7 @@ export function ResearchBlock({
   researchId: string | null;
 }) {
   const t = useTranslations("chat.research");
+  const threadId = useStore((state) => state.threadId);
   const reportId = useStore((state) =>
     researchId ? state.researchReportIds.get(researchId) : undefined,
   );
@@ -765,6 +767,9 @@ ${htmlContent}
               <TabsTrigger className="px-8" value="activities">
                 {t("activities")}
               </TabsTrigger>
+              <TabsTrigger className="px-8" value="trace">
+                {t("trace.title")}
+              </TabsTrigger>
             </TabsList>
           </div>
           <TabsContent
@@ -803,6 +808,26 @@ ${htmlContent}
                 <ResearchActivitiesBlock
                   className="mt-4"
                   researchId={researchId}
+                />
+              )}
+            </ScrollContainer>
+          </TabsContent>
+          <TabsContent
+            className="h-full min-h-0 flex-grow px-8"
+            value="trace"
+            forceMount
+            hidden={activeTab !== "trace"}
+          >
+            <ScrollContainer
+              className="h-full px-5 pb-20"
+              scrollShadowColor="var(--card)"
+              autoScrollToBottom={false}
+            >
+              {threadId && (
+                <AgentTraceBlock
+                  className="mt-4"
+                  threadId={threadId}
+                  active={activeTab === "trace"}
                 />
               )}
             </ScrollContainer>

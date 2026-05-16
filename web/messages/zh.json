@@ -163,7 +163,15 @@
       "nowPlayingPodcast": "正在播放播客...",
       "podcast": "播客",
       "errorGeneratingPodcast": "生成播客时出错。请重试。",
-      "downloadPodcast": "下载播客"
+      "downloadPodcast": "下载播客",
+      "trace": {
+        "title": "追踪",
+        "run": "运行",
+        "refresh": "刷新",
+        "loading": "正在加载追踪...",
+        "empty": "暂无追踪事件。",
+        "noTrace": "暂无追踪运行"
+      }
     },
     "evaluation": {
       "title": "报告质量评估",

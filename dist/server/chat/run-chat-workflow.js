@@ -163,6 +163,60 @@ function makeBaseState(params) {
         reportStyle: request.report_style,
     };
 }
+function contentPreview(content) {
+    if (typeof content !== "string")
+        return {};
+    return {
+        content_length: content.length,
+        content_preview: content.slice(0, 300),
+    };
+}
+function summarizeToolResult(content) {
+    if (typeof content !== "string")
+        return {};
+    let count;
+    try {
+        const parsed = JSON.parse(content);
+        if (Array.isArray(parsed))
+            count = parsed.length;
+    }
+    catch {
+        // Ignore non-JSON tool output.
+    }
+    return {
+        content_length: content.length,
+        content_preview: content.slice(0, 300),
+        ...(count != null ? { item_count: count } : {}),
+    };
+}
+function summarizeNodeOutput(output) {
+    if (!output || typeof output !== "object")
+        return {};
+    const obj = output;
+    return {
+        keys: Object.keys(obj),
+        ...(Array.isArray(obj.observations) ? { observations: obj.observations.length } : {}),
+        ...(obj.done ? { done: obj.done } : {}),
+        ...(typeof obj.plannerShouldInterrupt === "boolean" ? { plannerShouldInterrupt: obj.plannerShouldInterrupt } : {}),
+    };
+}
+async function tracedNode(trace, params, fn) {
+    trace?.spanStarted({ spanId: params.spanId, name: params.name, agent: params.agent, input: params.input });
+    const previousSpan = params.currentSpan;
+    params.setCurrentSpan(params.spanId);
+    try {
+        const result = await fn();
+        trace?.spanEnded({ spanId: params.spanId, name: params.name, agent: params.agent, status: "ok", output: summarizeNodeOutput(result) });
+        return result;
+    }
+    catch (e) {
+        trace?.spanEnded({ spanId: params.spanId, name: params.name, agent: params.agent, status: "error", error: e });
+        throw e;
+    }
+    finally {
+        params.setCurrentSpan(previousSpan);
+    }
+}
 function upsertThreadState(params) {
     const threadId = params.request.thread_id;
     const existing = params.store.get(threadId);
@@ -201,47 +255,177 @@ function upsertThreadState(params) {
     return merged;
 }
 export async function* runChatWorkflow(params) {
-    const { request, store, signal } = params;
+    const { request, store, signal, trace } = params;
     const incomingText = normalizeUserContent(request);
+    let currentSpanId;
+    let runStatus = "ok";
+    let runEndReason = "completed";
+    trace?.runStarted({
+        query: incomingText,
+        resources: request.resources.length,
+        enable_web_search: request.enable_web_search,
+        enable_background_investigation: request.enable_background_investigation,
+        interrupt_feedback: request.interrupt_feedback,
+    });
     const isFeedback = request.interrupt_feedback === "accepted" || request.interrupt_feedback === "edit_plan";
     const existing = store.get(request.thread_id);
     const query = isFeedback ? (existing?.researchTopic ?? incomingText) : incomingText;
     let state = upsertThreadState({ store, request, query, isFeedback });
     const llmCfg = pickLlmConfig({ enableDeepThinking: request.enable_deep_thinking });
     const llm = llmCfg ? new OpenAICompatibleClient(llmCfg) : null;
-    const PlanningState = Annotation.Root({
-        threadId: Annotation(),
-        locale: Annotation(),
-        researchTopic: Annotation(),
-        messages: Annotation(),
-        resources: Annotation(),
-        observations: Annotation(),
-        planIterations: Annotation(),
-        currentPlan: Annotation(),
-        backgroundInvestigationResults: Annotation(),
-        enableBackgroundInvestigation: Annotation(),
-        enableWebSearch: Annotation(),
-        maxPlanIterations: Annotation(),
-        maxStepNum: Annotation(),
-        maxSearchResults: Annotation(),
-        autoAcceptedPlan: Annotation(),
-        reportStyle: Annotation(),
-        incomingText: Annotation(),
-        interruptFeedback: Annotation(),
-        isFeedback: Annotation(),
-        coordinatorAction: Annotation(),
-        plannerShouldInterrupt: Annotation(),
-        done: Annotation(),
-    });
-    const emit = (config, event) => {
-        config?.writer?.(event);
-    };
-    const coordinatorNode = async (s, config) => {
-        if (s.isFeedback) {
-            return { coordinatorAction: "handoff_to_planner" };
-        }
-        if (s.resources.length > 0) {
+    try {
+        const PlanningState = Annotation.Root({
+            threadId: Annotation(),
+            locale: Annotation(),
+            researchTopic: Annotation(),
+            messages: Annotation(),
+            resources: Annotation(),
+            observations: Annotation(),
+            planIterations: Annotation(),
+            currentPlan: Annotation(),
+            backgroundInvestigationResults: Annotation(),
+            enableBackgroundInvestigation: Annotation(),
+            enableWebSearch: Annotation(),
+            maxPlanIterations: Annotation(),
+            maxStepNum: Annotation(),
+            maxSearchResults: Annotation(),
+            autoAcceptedPlan: Annotation(),
+            reportStyle: Annotation(),
+            incomingText: Annotation(),
+            interruptFeedback: Annotation(),
+            isFeedback: Annotation(),
+            coordinatorAction: Annotation(),
+            plannerShouldInterrupt: Annotation(),
+            done: Annotation(),
+        });
+        const recordChatEventAsTrace = (event) => {
+            const data = event.data;
+            const agent = typeof data.agent === "string" ? data.agent : undefined;
+            if (event.type === "tool_calls" && Array.isArray(data.tool_calls)) {
+                for (const toolCall of data.tool_calls) {
+                    if (!toolCall || typeof toolCall !== "object")
+                        continue;
+                    const tc = toolCall;
+                    trace?.toolCallStarted({
+                        ...(currentSpanId ? { spanId: currentSpanId } : {}),
+                        toolCallId: tc.id,
+                        toolName: tc.name,
+                        input: tc.args,
+                        ...(agent ? { agent } : {}),
+                    });
+                }
+                return;
+            }
+            if (event.type === "tool_call_result") {
+                const toolCallId = typeof data.tool_call_id === "string" ? data.tool_call_id : undefined;
+                if (toolCallId) {
+                    trace?.toolCallEnded({
+                        ...(currentSpanId ? { spanId: currentSpanId } : {}),
+                        toolCallId,
+                        output: summarizeToolResult(data.content),
+                        ...(agent ? { agent } : {}),
+                    });
+                }
+                return;
+            }
+            if (event.type === "message_chunk") {
+                trace?.message({
+                    ...(currentSpanId ? { spanId: currentSpanId } : {}),
+                    ...(agent ? { agent } : {}),
+                    metadata: {
+                        id: data.id,
+                        role: data.role,
+                        finish_reason: data.finish_reason,
+                        ...contentPreview(data.content),
+                        ...(typeof data.reasoning_content === "string"
+                            ? { reasoning_content_length: data.reasoning_content.length }
+                            : {}),
+                    },
+                });
+                return;
+            }
+            if (event.type === "interrupt") {
+                trace?.interrupt({
+                    ...(currentSpanId ? { spanId: currentSpanId } : {}),
+                    ...(agent ? { agent } : {}),
+                    metadata: { id: data.id, options: data.options },
+                });
+            }
+        };
+        const emit = (config, event) => {
+            recordChatEventAsTrace(event);
+            config?.writer?.(event);
+        };
+        const coordinatorNode = async (s, config) => tracedNode(trace, {
+            spanId: `span_coordinator_${randomUUID()}`,
+            name: "planning.coordinator",
+            agent: "coordinator",
+            input: { isFeedback: s.isFeedback, resources: s.resources.length },
+            currentSpan: currentSpanId,
+            setCurrentSpan: (spanId) => {
+                currentSpanId = spanId;
+            },
+        }, async () => {
+            if (s.isFeedback) {
+                return { coordinatorAction: "handoff_to_planner" };
+            }
+            if (s.resources.length > 0) {
+                const coordinatorId = newMessageId();
+                const content = isChineseLocale(s.locale)
+                    ? "收到。我会先制定一个学术研究计划，然后检索相关资料并撰写结构化研究报告。"
+                    : "Got it. I'll draft an academic research plan first, then retrieve evidence and write a structured research report.";
+                emit(config, {
+                    type: "message_chunk",
+                    data: {
+                        thread_id: s.threadId,
+                        id: coordinatorId,
+                        agent: "coordinator",
+                        role: "assistant",
+                        content,
+                    },
+                });
+                emit(config, {
+                    type: "message_chunk",
+                    data: {
+                        thread_id: s.threadId,
+                        id: coordinatorId,
+                        agent: "coordinator",
+                        role: "assistant",
+                        finish_reason: "stop",
+                    },
+                });
+                return { coordinatorAction: "handoff_to_planner" };
+            }
+            const decision = await decideCoordinatorAction({
+                llm,
+                locale: s.locale,
+                userText: s.incomingText,
+                ...(config?.signal ? { signal: config.signal } : {}),
+            });
             const coordinatorId = newMessageId();
+            if (decision.action === "direct_response") {
+                emit(config, {
+                    type: "message_chunk",
+                    data: {
+                        thread_id: s.threadId,
+                        id: coordinatorId,
+                        agent: "coordinator",
+                        role: "assistant",
+                        content: decision.message,
+                    },
+                });
+                emit(config, {
+                    type: "message_chunk",
+                    data: {
+                        thread_id: s.threadId,
+                        id: coordinatorId,
+                        agent: "coordinator",
+                        role: "assistant",
+                        finish_reason: "stop",
+                    },
+                });
+                return { coordinatorAction: "direct_response", done: "direct_response" };
+            }
             const content = isChineseLocale(s.locale)
                 ? "收到。我会先制定一个学术研究计划，然后检索相关资料并撰写结构化研究报告。"
                 : "Got it. I'll draft an academic research plan first, then retrieve evidence and write a structured research report.";
@@ -266,250 +450,620 @@ export async function* runChatWorkflow(params) {
                 },
             });
             return { coordinatorAction: "handoff_to_planner" };
-        }
-        const decision = await decideCoordinatorAction({
-            llm,
-            locale: s.locale,
-            userText: s.incomingText,
-            ...(config?.signal ? { signal: config.signal } : {}),
         });
-        const coordinatorId = newMessageId();
-        if (decision.action === "direct_response") {
+        const backgroundInvestigatorNode = async (s, config) => tracedNode(trace, {
+            spanId: `span_background_investigator_${randomUUID()}`,
+            name: "planning.background_investigator",
+            agent: "researcher",
+            input: { enabled: s.enableBackgroundInvestigation && s.enableWebSearch, query: s.researchTopic },
+            currentSpan: currentSpanId,
+            setCurrentSpan: (spanId) => {
+                currentSpanId = spanId;
+            },
+        }, async () => {
+            const shouldPlan = !s.interruptFeedback || s.interruptFeedback === "edit_plan";
+            if (!shouldPlan)
+                return {};
+            if (!s.enableBackgroundInvestigation || !s.enableWebSearch)
+                return {};
+            const academicToolCallId = newToolCallId();
+            const webToolCallId = newToolCallId();
+            const researcherId = newMessageId();
+            const toolCalls = [
+                {
+                    type: "tool_call",
+                    id: academicToolCallId,
+                    name: "academic_search",
+                    args: { query: s.researchTopic, max_results: s.maxSearchResults },
+                },
+                {
+                    type: "tool_call",
+                    id: webToolCallId,
+                    name: "web_search",
+                    args: { query: s.researchTopic, max_results: s.maxSearchResults },
+                },
+            ];
+            const toolCallChunks = toolCalls.map((toolCall, index) => ({
+                type: "tool_call_chunk",
+                index,
+                id: toolCall.id,
+                name: toolCall.name,
+                args: JSON.stringify(toolCall.args),
+            }));
             emit(config, {
-                type: "message_chunk",
+                type: "tool_calls",
                 data: {
                     thread_id: s.threadId,
-                    id: coordinatorId,
-                    agent: "coordinator",
+                    id: researcherId,
+                    agent: "researcher",
                     role: "assistant",
-                    content: decision.message,
+                    tool_calls: toolCalls,
+                    tool_call_chunks: toolCallChunks,
                 },
             });
             emit(config, {
                 type: "message_chunk",
                 data: {
                     thread_id: s.threadId,
-                    id: coordinatorId,
-                    agent: "coordinator",
+                    id: researcherId,
+                    agent: "researcher",
                     role: "assistant",
-                    finish_reason: "stop",
+                    finish_reason: "tool_calls",
                 },
             });
-            return { coordinatorAction: "direct_response", done: "direct_response" };
-        }
-        const content = isChineseLocale(s.locale)
-            ? "收到。我会先制定一个学术研究计划，然后检索相关资料并撰写结构化研究报告。"
-            : "Got it. I'll draft an academic research plan first, then retrieve evidence and write a structured research report.";
-        emit(config, {
-            type: "message_chunk",
-            data: {
-                thread_id: s.threadId,
-                id: coordinatorId,
-                agent: "coordinator",
-                role: "assistant",
-                content,
-            },
-        });
-        emit(config, {
-            type: "message_chunk",
-            data: {
-                thread_id: s.threadId,
-                id: coordinatorId,
-                agent: "coordinator",
-                role: "assistant",
-                finish_reason: "stop",
-            },
-        });
-        return { coordinatorAction: "handoff_to_planner" };
-    };
-    const backgroundInvestigatorNode = async (s, config) => {
-        const shouldPlan = !s.interruptFeedback || s.interruptFeedback === "edit_plan";
-        if (!shouldPlan)
-            return {};
-        if (!s.enableBackgroundInvestigation || !s.enableWebSearch)
-            return {};
-        const academicToolCallId = newToolCallId();
-        const webToolCallId = newToolCallId();
-        const researcherId = newMessageId();
-        const toolCalls = [
-            {
-                type: "tool_call",
-                id: academicToolCallId,
-                name: "academic_search",
-                args: { query: s.researchTopic, max_results: s.maxSearchResults },
-            },
-            {
-                type: "tool_call",
-                id: webToolCallId,
-                name: "web_search",
-                args: { query: s.researchTopic, max_results: s.maxSearchResults },
-            },
-        ];
-        const toolCallChunks = toolCalls.map((toolCall, index) => ({
-            type: "tool_call_chunk",
-            index,
-            id: toolCall.id,
-            name: toolCall.name,
-            args: JSON.stringify(toolCall.args),
-        }));
-        emit(config, {
-            type: "tool_calls",
-            data: {
-                thread_id: s.threadId,
-                id: researcherId,
-                agent: "researcher",
-                role: "assistant",
-                tool_calls: toolCalls,
-                tool_call_chunks: toolCallChunks,
-            },
-        });
-        emit(config, {
-            type: "message_chunk",
-            data: {
-                thread_id: s.threadId,
-                id: researcherId,
-                agent: "researcher",
-                role: "assistant",
-                finish_reason: "tool_calls",
-            },
-        });
-        let academicText = "";
-        let academicToolResult = "[]";
-        try {
-            const results = await academicSearch({
-                query: s.researchTopic,
-                maxResults: s.maxSearchResults,
-                ...(config?.signal ? { signal: config.signal } : {}),
+            let academicText = "";
+            let academicToolResult = "[]";
+            try {
+                const results = await academicSearch({
+                    query: s.researchTopic,
+                    maxResults: s.maxSearchResults,
+                    ...(config?.signal ? { signal: config.signal } : {}),
+                });
+                academicText = formatAcademicResults(results);
+                academicToolResult = academicResultsToToolResult(results);
+            }
+            catch (e) {
+                academicText = e instanceof Error ? e.message : String(e);
+                academicToolResult = JSON.stringify([{ type: "page", title: academicText, url: "", content: "" }]);
+            }
+            emit(config, {
+                type: "tool_call_result",
+                data: {
+                    thread_id: s.threadId,
+                    id: researcherId,
+                    agent: "researcher",
+                    role: "tool",
+                    tool_call_id: academicToolCallId,
+                    content: academicToolResult,
+                },
             });
-            academicText = formatAcademicResults(results);
-            academicToolResult = academicResultsToToolResult(results);
-        }
-        catch (e) {
-            academicText = e instanceof Error ? e.message : String(e);
-            academicToolResult = JSON.stringify([{ type: "page", title: academicText, url: "", content: "" }]);
-        }
-        emit(config, {
-            type: "tool_call_result",
-            data: {
-                thread_id: s.threadId,
-                id: researcherId,
-                agent: "researcher",
-                role: "tool",
-                tool_call_id: academicToolCallId,
-                content: academicToolResult,
-            },
-        });
-        let webText = "";
-        let webToolResult = "[]";
-        try {
-            const results = await webSearch({
-                query: s.researchTopic,
-                maxResults: s.maxSearchResults,
-                ...(config?.signal ? { signal: config.signal } : {}),
+            let webText = "";
+            let webToolResult = "[]";
+            try {
+                const results = await webSearch({
+                    query: s.researchTopic,
+                    maxResults: s.maxSearchResults,
+                    ...(config?.signal ? { signal: config.signal } : {}),
+                });
+                webText = results.length
+                    ? results
+                        .map((r, i) => `- [${i + 1}] ${r.title} (${r.url})${r.content ? `\n  ${r.content}` : ""}`)
+                        .join("\n")
+                    : "(no web search results)";
+                webToolResult = JSON.stringify(results.map((r) => ({
+                    type: "page",
+                    title: r.title,
+                    url: r.url,
+                    content: r.content ?? "",
+                })));
+            }
+            catch (e) {
+                webText = e instanceof Error ? e.message : String(e);
+                webToolResult = JSON.stringify([{ type: "page", title: webText, url: "", content: "" }]);
+            }
+            emit(config, {
+                type: "tool_call_result",
+                data: {
+                    thread_id: s.threadId,
+                    id: researcherId,
+                    agent: "researcher",
+                    role: "tool",
+                    tool_call_id: webToolCallId,
+                    content: webToolResult,
+                },
             });
-            webText = results.length
-                ? results
-                    .map((r, i) => `- [${i + 1}] ${r.title} (${r.url})${r.content ? `\n  ${r.content}` : ""}`)
-                    .join("\n")
-                : "(no web search results)";
-            webToolResult = JSON.stringify(results.map((r) => ({
-                type: "page",
-                title: r.title,
-                url: r.url,
-                content: r.content ?? "",
-            })));
-        }
-        catch (e) {
-            webText = e instanceof Error ? e.message : String(e);
-            webToolResult = JSON.stringify([{ type: "page", title: webText, url: "", content: "" }]);
-        }
-        emit(config, {
-            type: "tool_call_result",
-            data: {
-                thread_id: s.threadId,
-                id: researcherId,
-                agent: "researcher",
-                role: "tool",
-                tool_call_id: webToolCallId,
-                content: webToolResult,
-            },
+            const investigationText = [`Academic literature search:\n${academicText}`, `Web search:\n${webText}`].join("\n\n");
+            store.set({ ...s, backgroundInvestigationResults: investigationText });
+            return { backgroundInvestigationResults: investigationText };
         });
-        const investigationText = [`Academic literature search:\n${academicText}`, `Web search:\n${webText}`].join("\n\n");
-        store.set({ ...s, backgroundInvestigationResults: investigationText });
-        return { backgroundInvestigationResults: investigationText };
-    };
-    const plannerNode = async (s, config) => {
-        const shouldPlan = !s.interruptFeedback || s.interruptFeedback === "edit_plan";
-        if (!shouldPlan) {
-            return { plannerShouldInterrupt: false, done: "none" };
-        }
-        let next = s;
-        const plannerId = newMessageId();
-        const isEditing = s.interruptFeedback === "edit_plan";
-        const prompt = isEditing && next.currentPlan
-            ? buildPlannerEditPrompt({
-                locale: next.locale,
-                query: next.researchTopic,
+        const plannerNode = async (s, config) => tracedNode(trace, {
+            spanId: `span_planner_${randomUUID()}`,
+            name: "planning.planner",
+            agent: "planner",
+            input: { isFeedback: s.isFeedback, interruptFeedback: s.interruptFeedback, planIterations: s.planIterations },
+            currentSpan: currentSpanId,
+            setCurrentSpan: (spanId) => {
+                currentSpanId = spanId;
+            },
+        }, async () => {
+            const shouldPlan = !s.interruptFeedback || s.interruptFeedback === "edit_plan";
+            if (!shouldPlan) {
+                return { plannerShouldInterrupt: false, done: "none" };
+            }
+            let next = s;
+            const plannerId = newMessageId();
+            const isEditing = s.interruptFeedback === "edit_plan";
+            const prompt = isEditing && next.currentPlan
+                ? buildPlannerEditPrompt({
+                    locale: next.locale,
+                    query: next.researchTopic,
+                    currentPlan: next.currentPlan,
+                    instruction: s.incomingText,
+                    maxSteps: next.maxStepNum,
+                    enableWebSearch: next.enableWebSearch,
+                    backgroundInvestigationResults: next.backgroundInvestigationResults,
+                })
+                : buildPlannerPrompt({
+                    query: next.researchTopic,
+                    locale: next.locale,
+                    maxSteps: next.maxStepNum,
+                    enableWebSearch: next.enableWebSearch,
+                    backgroundInvestigationResults: next.backgroundInvestigationResults,
+                });
+            if (!llm) {
+                const plan = buildFallbackPlan({
+                    query: next.researchTopic,
+                    maxSteps: next.maxStepNum,
+                    enableWebSearch: next.enableWebSearch,
+                });
+                const planText = JSON.stringify(plan, null, 2);
+                emit(config, {
+                    type: "message_chunk",
+                    data: {
+                        thread_id: next.threadId,
+                        id: plannerId,
+                        agent: "planner",
+                        role: "assistant",
+                        content: planText,
+                    },
+                });
+                emit(config, {
+                    type: "message_chunk",
+                    data: {
+                        thread_id: next.threadId,
+                        id: plannerId,
+                        agent: "planner",
+                        role: "assistant",
+                        finish_reason: "stop",
+                    },
+                });
+                next = { ...next, currentPlan: plan, planIterations: next.planIterations + 1 };
+                store.set(next);
+            }
+            else {
+                let fullText = "";
+                emit(config, {
+                    type: "message_chunk",
+                    data: {
+                        thread_id: next.threadId,
+                        id: plannerId,
+                        agent: "planner",
+                        role: "assistant",
+                        reasoning_content: "Planning…",
+                    },
+                });
+                try {
+                    for await (const delta of llm.streamChatCompletions({
+                        messages: [
+                            { role: "system", content: prompt.system },
+                            { role: "user", content: prompt.user },
+                        ],
+                        ...(config?.signal ? { signal: config.signal } : {}),
+                    })) {
+                        if (delta.reasoningContent) {
+                            emit(config, {
+                                type: "message_chunk",
+                                data: {
+                                    thread_id: next.threadId,
+                                    id: plannerId,
+                                    agent: "planner",
+                                    role: "assistant",
+                                    reasoning_content: delta.reasoningContent,
+                                },
+                            });
+                        }
+                        if (delta.content) {
+                            fullText += stripThinkTags(delta.content);
+                        }
+                    }
+                }
+                catch (e) {
+                    const message = e instanceof Error ? e.message : String(e);
+                    emit(config, {
+                        type: "message_chunk",
+                        data: {
+                            thread_id: next.threadId,
+                            id: plannerId,
+                            agent: "planner",
+                            role: "assistant",
+                            reasoning_content: `Planner stream failed: ${message}`,
+                        },
+                    });
+                }
+                const parsedPlan = ensureTopicPlanFields({
+                    plan: safeParsePlan(fullText) ??
+                        buildFallbackPlan({
+                            query: next.researchTopic,
+                            maxSteps: next.maxStepNum,
+                            enableWebSearch: next.enableWebSearch,
+                        }),
+                    query: next.researchTopic,
+                    enableWebSearch: next.enableWebSearch,
+                });
+                const json = JSON.stringify(parsedPlan, null, 2);
+                emit(config, {
+                    type: "message_chunk",
+                    data: {
+                        thread_id: next.threadId,
+                        id: plannerId,
+                        agent: "planner",
+                        role: "assistant",
+                        content: json,
+                    },
+                });
+                emit(config, {
+                    type: "message_chunk",
+                    data: {
+                        thread_id: next.threadId,
+                        id: plannerId,
+                        agent: "planner",
+                        role: "assistant",
+                        finish_reason: "stop",
+                    },
+                });
+                next = { ...next, currentPlan: parsedPlan, planIterations: next.planIterations + 1 };
+                store.set(next);
+            }
+            const reachedMaxPlanIterations = next.planIterations >= next.maxPlanIterations;
+            const shouldRun = next.autoAcceptedPlan || s.interruptFeedback === "accepted" || reachedMaxPlanIterations;
+            if (!shouldRun) {
+                return { plannerShouldInterrupt: true, done: "interrupt_ready" };
+            }
+            return {
+                plannerShouldInterrupt: false,
+                done: "none",
                 currentPlan: next.currentPlan,
-                instruction: s.incomingText,
-                maxSteps: next.maxStepNum,
-                enableWebSearch: next.enableWebSearch,
+                planIterations: next.planIterations,
                 backgroundInvestigationResults: next.backgroundInvestigationResults,
-            })
-            : buildPlannerPrompt({
-                query: next.researchTopic,
-                locale: next.locale,
-                maxSteps: next.maxStepNum,
-                enableWebSearch: next.enableWebSearch,
-                backgroundInvestigationResults: next.backgroundInvestigationResults,
-            });
-        if (!llm) {
-            const plan = buildFallbackPlan({
-                query: next.researchTopic,
-                maxSteps: next.maxStepNum,
-                enableWebSearch: next.enableWebSearch,
-            });
-            const planText = JSON.stringify(plan, null, 2);
+            };
+        });
+        const humanFeedbackNode = async (s, config) => tracedNode(trace, {
+            spanId: `span_human_feedback_${randomUUID()}`,
+            name: "planning.human_feedback",
+            agent: "planner",
+            input: { plannerShouldInterrupt: s.plannerShouldInterrupt },
+            currentSpan: currentSpanId,
+            setCurrentSpan: (spanId) => {
+                currentSpanId = spanId;
+            },
+        }, async () => {
+            if (!s.plannerShouldInterrupt)
+                return {};
+            const interruptId = `human_feedback:${randomUUID()}`;
             emit(config, {
-                type: "message_chunk",
+                type: "interrupt",
                 data: {
-                    thread_id: next.threadId,
-                    id: plannerId,
+                    thread_id: s.threadId,
+                    id: interruptId,
                     agent: "planner",
                     role: "assistant",
-                    content: planText,
+                    finish_reason: "interrupt",
+                    options: [
+                        { text: "Edit plan", value: "edit_plan" },
+                        { text: "Start research", value: "accepted" },
+                    ],
+                },
+            });
+            return {};
+        });
+        const planningGraph = new StateGraph(PlanningState)
+            .addNode("coordinator", coordinatorNode)
+            .addNode("background_investigator", backgroundInvestigatorNode)
+            .addNode("planner", plannerNode)
+            .addNode("human_feedback", humanFeedbackNode)
+            .addEdge(START, "coordinator")
+            .addConditionalEdges("coordinator", (s) => {
+            if (s.coordinatorAction === "direct_response")
+                return END;
+            const shouldPlan = !s.interruptFeedback || s.interruptFeedback === "edit_plan";
+            if (shouldPlan && s.enableBackgroundInvestigation && s.enableWebSearch)
+                return "background_investigator";
+            return "planner";
+        })
+            .addEdge("background_investigator", "planner")
+            .addConditionalEdges("planner", (s) => {
+            return s.plannerShouldInterrupt ? "human_feedback" : END;
+        })
+            .addEdge("human_feedback", END)
+            .compile();
+        let finalPlanningState = {
+            ...state,
+            incomingText,
+            interruptFeedback: request.interrupt_feedback,
+            isFeedback,
+            coordinatorAction: null,
+            plannerShouldInterrupt: false,
+            done: "none",
+        };
+        const stream = await planningGraph.stream(finalPlanningState, {
+            streamMode: ["custom", "values"],
+            ...(signal ? { signal } : {}),
+        });
+        for await (const chunk of stream) {
+            if (Array.isArray(chunk) && chunk.length === 2) {
+                const [mode, payload] = chunk;
+                if (mode === "custom") {
+                    const event = payload;
+                    yield event;
+                }
+                if (mode === "values") {
+                    finalPlanningState = payload;
+                }
+            }
+        }
+        if (finalPlanningState.done === "direct_response") {
+            runEndReason = "direct_response";
+            return;
+        }
+        if (finalPlanningState.plannerShouldInterrupt && finalPlanningState.done === "interrupt_ready") {
+            runEndReason = "interrupt_ready";
+            return;
+        }
+        state = store.get(request.thread_id) ?? state;
+        const plan = state.currentPlan
+            ? state.currentPlan
+            : buildFallbackPlan({
+                query: state.researchTopic,
+                maxSteps: state.maxStepNum,
+                enableWebSearch: state.enableWebSearch,
+            });
+        if (!state.currentPlan) {
+            state = { ...state, currentPlan: plan };
+            store.set(state);
+        }
+        const researcherNode = async (s, config) => tracedNode(trace, {
+            spanId: `span_researcher_${randomUUID()}`,
+            name: "execution.researcher",
+            agent: "researcher",
+            input: { query: s.researchTopic, resources: s.resources.length, enableWebSearch: s.enableWebSearch },
+            currentSpan: currentSpanId,
+            setCurrentSpan: (spanId) => {
+                currentSpanId = spanId;
+            },
+        }, async () => {
+            const researcherId = newMessageId();
+            const retrieved = await retrieveResources({
+                query: s.researchTopic,
+                resources: s.resources,
+                limit: Math.max(1, Math.min(10, s.maxSearchResults)),
+            });
+            const retrieveToolCallId = newToolCallId();
+            const academicToolCallId = newToolCallId();
+            const toolCalls = [
+                {
+                    type: "tool_call",
+                    id: retrieveToolCallId,
+                    name: "retrieve_resources",
+                    args: { query: s.researchTopic, limit: retrieved.length },
+                },
+                ...(s.enableWebSearch
+                    ? [
+                        {
+                            type: "tool_call",
+                            id: academicToolCallId,
+                            name: "academic_search",
+                            args: { query: s.researchTopic, max_results: s.maxSearchResults },
+                        },
+                    ]
+                    : []),
+            ];
+            const toolCallChunks = toolCalls.map((toolCall, index) => ({
+                type: "tool_call_chunk",
+                index,
+                id: toolCall.id,
+                name: toolCall.name,
+                args: JSON.stringify(toolCall.args),
+            }));
+            emit(config, {
+                type: "tool_calls",
+                data: {
+                    thread_id: s.threadId,
+                    id: researcherId,
+                    agent: "researcher",
+                    role: "assistant",
+                    tool_calls: toolCalls,
+                    tool_call_chunks: toolCallChunks,
                 },
             });
             emit(config, {
                 type: "message_chunk",
                 data: {
-                    thread_id: next.threadId,
-                    id: plannerId,
-                    agent: "planner",
+                    thread_id: s.threadId,
+                    id: researcherId,
+                    agent: "researcher",
+                    role: "assistant",
+                    finish_reason: "tool_calls",
+                },
+            });
+            const retrievalText = retrieved
+                .map((r, i) => {
+                const desc = r.description ? `\n  ${r.description}` : "";
+                const excerpt = r.excerpt
+                    ? `\n  Content:\n${r.excerpt
+                        .split("\n")
+                        .map((line) => `  ${line}`)
+                        .join("\n")}`
+                    : "";
+                return `- [${i + 1}] ${r.title} (${r.uri})${desc}${excerpt}`;
+            })
+                .join("\n");
+            const retrievalToolResult = JSON.stringify(retrieved.map((r, i) => ({
+                id: r.uri,
+                title: r.title,
+                content: r.excerpt ?? r.description ?? `Resource ${i + 1}`,
+            })));
+            emit(config, {
+                type: "tool_call_result",
+                data: {
+                    thread_id: s.threadId,
+                    id: researcherId,
+                    agent: "researcher",
+                    role: "tool",
+                    tool_call_id: retrieveToolCallId,
+                    content: retrievalToolResult,
+                },
+            });
+            let academicText = "";
+            if (s.enableWebSearch) {
+                try {
+                    const academicResults = await academicSearch({
+                        query: s.researchTopic,
+                        maxResults: s.maxSearchResults,
+                        ...(config?.signal ? { signal: config.signal } : {}),
+                    });
+                    academicText = formatAcademicResults(academicResults);
+                    emit(config, {
+                        type: "tool_call_result",
+                        data: {
+                            thread_id: s.threadId,
+                            id: researcherId,
+                            agent: "researcher",
+                            role: "tool",
+                            tool_call_id: academicToolCallId,
+                            content: academicResultsToToolResult(academicResults),
+                        },
+                    });
+                }
+                catch (e) {
+                    academicText = e instanceof Error ? e.message : String(e);
+                    emit(config, {
+                        type: "tool_call_result",
+                        data: {
+                            thread_id: s.threadId,
+                            id: researcherId,
+                            agent: "researcher",
+                            role: "tool",
+                            tool_call_id: academicToolCallId,
+                            content: JSON.stringify([{ type: "page", title: academicText, url: "", content: "" }]),
+                        },
+                    });
+                }
+            }
+            emit(config, {
+                type: "message_chunk",
+                data: {
+                    thread_id: s.threadId,
+                    id: researcherId,
+                    agent: "researcher",
                     role: "assistant",
                     finish_reason: "stop",
                 },
             });
-            next = { ...next, currentPlan: plan, planIterations: next.planIterations + 1 };
+            const updates = [
+                s.backgroundInvestigationResults ? `Background investigation:\n${s.backgroundInvestigationResults}` : null,
+                retrievalText ? `Retrieved resources:\n${retrievalText}` : null,
+                academicText ? `Academic literature search:\n${academicText}` : null,
+            ].filter((x) => Boolean(x));
+            const next = {
+                ...s,
+                observations: [...s.observations, ...updates],
+            };
             store.set(next);
-        }
-        else {
-            let fullText = "";
+            return { observations: next.observations };
+        });
+        const reporterNode = async (s, config) => tracedNode(trace, {
+            spanId: `span_reporter_${randomUUID()}`,
+            name: "execution.reporter",
+            agent: "reporter",
+            input: { observations: s.observations.length, resources: s.resources.length, style: s.reportStyle },
+            currentSpan: currentSpanId,
+            setCurrentSpan: (spanId) => {
+                currentSpanId = spanId;
+            },
+        }, async () => {
+            const reporterId = newMessageId();
+            const sources = [
+                ...s.resources.map((r) => ({ title: r.title, uri: r.uri })),
+                ...extractObservationSources(s.observations),
+            ];
+            const style = s.reportStyle;
+            const observations = s.observations;
+            const planForReport = s.currentPlan ??
+                buildFallbackPlan({
+                    query: s.researchTopic,
+                    maxSteps: s.maxStepNum,
+                    enableWebSearch: s.enableWebSearch,
+                });
+            if (!llm) {
+                const fallback = [
+                    `# ${s.researchTopic || planForReport.title || "Report"}`,
+                    "",
+                    `Style: ${style ?? "default"}`,
+                    "",
+                    "## Plan",
+                    planForReport.steps.map((step, i) => `${i + 1}. ${step.title} — ${step.description}`).join("\n"),
+                    "",
+                    "## Notes",
+                    observations.length ? observations.join("\n\n") : "(none)",
+                    "",
+                    "## Answer",
+                    "LLM is not configured. Set BASIC_MODEL__MODEL and BASIC_MODEL__API_KEY to enable full academic report generation.",
+                ].join("\n");
+                emit(config, {
+                    type: "message_chunk",
+                    data: {
+                        thread_id: s.threadId,
+                        id: reporterId,
+                        agent: "reporter",
+                        role: "assistant",
+                        content: fallback,
+                    },
+                });
+                emit(config, {
+                    type: "message_chunk",
+                    data: {
+                        thread_id: s.threadId,
+                        id: reporterId,
+                        agent: "reporter",
+                        role: "assistant",
+                        finish_reason: "stop",
+                    },
+                });
+                return {};
+            }
+            const reportPrompt = buildReporterPrompt({
+                query: s.researchTopic,
+                locale: s.locale,
+                style,
+                plan: planForReport,
+                observations,
+                sources,
+            });
             emit(config, {
                 type: "message_chunk",
                 data: {
-                    thread_id: next.threadId,
-                    id: plannerId,
-                    agent: "planner",
+                    thread_id: s.threadId,
+                    id: reporterId,
+                    agent: "reporter",
                     role: "assistant",
-                    reasoning_content: "Planning…",
+                    reasoning_content: "Writing…",
                 },
             });
             try {
                 for await (const delta of llm.streamChatCompletions({
                     messages: [
-                        { role: "system", content: prompt.system },
-                        { role: "user", content: prompt.user },
+                        { role: "system", content: reportPrompt.system },
+                        { role: "user", content: reportPrompt.user },
                     ],
                     ...(config?.signal ? { signal: config.signal } : {}),
                 })) {
@@ -517,16 +1071,28 @@ export async function* runChatWorkflow(params) {
                         emit(config, {
                             type: "message_chunk",
                             data: {
-                                thread_id: next.threadId,
-                                id: plannerId,
-                                agent: "planner",
+                                thread_id: s.threadId,
+                                id: reporterId,
+                                agent: "reporter",
                                 role: "assistant",
                                 reasoning_content: delta.reasoningContent,
                             },
                         });
                     }
                     if (delta.content) {
-                        fullText += stripThinkTags(delta.content);
+                        const cleaned = stripThinkTags(delta.content);
+                        if (!cleaned)
+                            continue;
+                        emit(config, {
+                            type: "message_chunk",
+                            data: {
+                                thread_id: s.threadId,
+                                id: reporterId,
+                                agent: "reporter",
+                                role: "assistant",
+                                content: cleaned,
+                            },
+                        });
                     }
                 }
             }
@@ -535,446 +1101,68 @@ export async function* runChatWorkflow(params) {
                 emit(config, {
                     type: "message_chunk",
                     data: {
-                        thread_id: next.threadId,
-                        id: plannerId,
-                        agent: "planner",
+                        thread_id: s.threadId,
+                        id: reporterId,
+                        agent: "reporter",
                         role: "assistant",
-                        reasoning_content: `Planner stream failed: ${message}`,
+                        content: `\n\n[reporter_error] ${message}`,
                     },
                 });
             }
-            const parsedPlan = ensureTopicPlanFields({
-                plan: safeParsePlan(fullText) ??
-                    buildFallbackPlan({
-                        query: next.researchTopic,
-                        maxSteps: next.maxStepNum,
-                        enableWebSearch: next.enableWebSearch,
-                    }),
-                query: next.researchTopic,
-                enableWebSearch: next.enableWebSearch,
-            });
-            const json = JSON.stringify(parsedPlan, null, 2);
             emit(config, {
                 type: "message_chunk",
                 data: {
-                    thread_id: next.threadId,
-                    id: plannerId,
-                    agent: "planner",
-                    role: "assistant",
-                    content: json,
-                },
-            });
-            emit(config, {
-                type: "message_chunk",
-                data: {
-                    thread_id: next.threadId,
-                    id: plannerId,
-                    agent: "planner",
+                    thread_id: s.threadId,
+                    id: reporterId,
+                    agent: "reporter",
                     role: "assistant",
                     finish_reason: "stop",
                 },
             });
-            next = { ...next, currentPlan: parsedPlan, planIterations: next.planIterations + 1 };
-            store.set(next);
-        }
-        const reachedMaxPlanIterations = next.planIterations >= next.maxPlanIterations;
-        const shouldRun = next.autoAcceptedPlan || s.interruptFeedback === "accepted" || reachedMaxPlanIterations;
-        if (!shouldRun) {
-            return { plannerShouldInterrupt: true, done: "interrupt_ready" };
-        }
-        return {
-            plannerShouldInterrupt: false,
+            return {};
+        });
+        const executionGraph = new StateGraph(PlanningState)
+            .addNode("researcher", researcherNode)
+            .addNode("reporter", reporterNode)
+            .addEdge(START, "researcher")
+            .addEdge("researcher", "reporter")
+            .addEdge("reporter", END)
+            .compile();
+        let execState = {
+            ...finalPlanningState,
+            ...state,
+            incomingText,
+            interruptFeedback: request.interrupt_feedback,
+            isFeedback,
             done: "none",
-            currentPlan: next.currentPlan,
-            planIterations: next.planIterations,
-            backgroundInvestigationResults: next.backgroundInvestigationResults,
         };
-    };
-    const humanFeedbackNode = async (s, config) => {
-        if (!s.plannerShouldInterrupt)
-            return {};
-        const interruptId = `human_feedback:${randomUUID()}`;
-        emit(config, {
-            type: "interrupt",
-            data: {
-                thread_id: s.threadId,
-                id: interruptId,
-                agent: "planner",
-                role: "assistant",
-                finish_reason: "interrupt",
-                options: [
-                    { text: "Edit plan", value: "edit_plan" },
-                    { text: "Start research", value: "accepted" },
-                ],
-            },
+        const execStream = await executionGraph.stream(execState, {
+            streamMode: ["custom", "values"],
+            ...(signal ? { signal } : {}),
         });
-        return {};
-    };
-    const planningGraph = new StateGraph(PlanningState)
-        .addNode("coordinator", coordinatorNode)
-        .addNode("background_investigator", backgroundInvestigatorNode)
-        .addNode("planner", plannerNode)
-        .addNode("human_feedback", humanFeedbackNode)
-        .addEdge(START, "coordinator")
-        .addConditionalEdges("coordinator", (s) => {
-        if (s.coordinatorAction === "direct_response")
-            return END;
-        const shouldPlan = !s.interruptFeedback || s.interruptFeedback === "edit_plan";
-        if (shouldPlan && s.enableBackgroundInvestigation && s.enableWebSearch)
-            return "background_investigator";
-        return "planner";
-    })
-        .addEdge("background_investigator", "planner")
-        .addConditionalEdges("planner", (s) => {
-        return s.plannerShouldInterrupt ? "human_feedback" : END;
-    })
-        .addEdge("human_feedback", END)
-        .compile();
-    let finalPlanningState = {
-        ...state,
-        incomingText,
-        interruptFeedback: request.interrupt_feedback,
-        isFeedback,
-        coordinatorAction: null,
-        plannerShouldInterrupt: false,
-        done: "none",
-    };
-    const stream = await planningGraph.stream(finalPlanningState, {
-        streamMode: ["custom", "values"],
-        ...(signal ? { signal } : {}),
-    });
-    for await (const chunk of stream) {
-        if (Array.isArray(chunk) && chunk.length === 2) {
-            const [mode, payload] = chunk;
-            if (mode === "custom") {
-                const event = payload;
-                yield event;
-            }
-            if (mode === "values") {
-                finalPlanningState = payload;
-            }
-        }
-    }
-    if (finalPlanningState.done === "direct_response") {
-        return;
-    }
-    if (finalPlanningState.plannerShouldInterrupt && finalPlanningState.done === "interrupt_ready") {
-        return;
-    }
-    state = store.get(request.thread_id) ?? state;
-    const plan = state.currentPlan
-        ? state.currentPlan
-        : buildFallbackPlan({
-            query: state.researchTopic,
-            maxSteps: state.maxStepNum,
-            enableWebSearch: state.enableWebSearch,
-        });
-    if (!state.currentPlan) {
-        state = { ...state, currentPlan: plan };
-        store.set(state);
-    }
-    const researcherNode = async (s, config) => {
-        const researcherId = newMessageId();
-        const retrieved = await retrieveResources({
-            query: s.researchTopic,
-            resources: s.resources,
-            limit: Math.max(1, Math.min(10, s.maxSearchResults)),
-        });
-        const retrieveToolCallId = newToolCallId();
-        const academicToolCallId = newToolCallId();
-        const toolCalls = [
-            {
-                type: "tool_call",
-                id: retrieveToolCallId,
-                name: "retrieve_resources",
-                args: { query: s.researchTopic, limit: retrieved.length },
-            },
-            ...(s.enableWebSearch
-                ? [
-                    {
-                        type: "tool_call",
-                        id: academicToolCallId,
-                        name: "academic_search",
-                        args: { query: s.researchTopic, max_results: s.maxSearchResults },
-                    },
-                ]
-                : []),
-        ];
-        const toolCallChunks = toolCalls.map((toolCall, index) => ({
-            type: "tool_call_chunk",
-            index,
-            id: toolCall.id,
-            name: toolCall.name,
-            args: JSON.stringify(toolCall.args),
-        }));
-        emit(config, {
-            type: "tool_calls",
-            data: {
-                thread_id: s.threadId,
-                id: researcherId,
-                agent: "researcher",
-                role: "assistant",
-                tool_calls: toolCalls,
-                tool_call_chunks: toolCallChunks,
-            },
-        });
-        emit(config, {
-            type: "message_chunk",
-            data: {
-                thread_id: s.threadId,
-                id: researcherId,
-                agent: "researcher",
-                role: "assistant",
-                finish_reason: "tool_calls",
-            },
-        });
-        const retrievalText = retrieved
-            .map((r, i) => {
-            const desc = r.description ? `\n  ${r.description}` : "";
-            const excerpt = r.excerpt
-                ? `\n  Content:\n${r.excerpt
-                    .split("\n")
-                    .map((line) => `  ${line}`)
-                    .join("\n")}`
-                : "";
-            return `- [${i + 1}] ${r.title} (${r.uri})${desc}${excerpt}`;
-        })
-            .join("\n");
-        const retrievalToolResult = JSON.stringify(retrieved.map((r, i) => ({
-            id: r.uri,
-            title: r.title,
-            content: r.excerpt ?? r.description ?? `Resource ${i + 1}`,
-        })));
-        emit(config, {
-            type: "tool_call_result",
-            data: {
-                thread_id: s.threadId,
-                id: researcherId,
-                agent: "researcher",
-                role: "tool",
-                tool_call_id: retrieveToolCallId,
-                content: retrievalToolResult,
-            },
-        });
-        let academicText = "";
-        if (s.enableWebSearch) {
-            try {
-                const academicResults = await academicSearch({
-                    query: s.researchTopic,
-                    maxResults: s.maxSearchResults,
-                    ...(config?.signal ? { signal: config.signal } : {}),
-                });
-                academicText = formatAcademicResults(academicResults);
-                emit(config, {
-                    type: "tool_call_result",
-                    data: {
-                        thread_id: s.threadId,
-                        id: researcherId,
-                        agent: "researcher",
-                        role: "tool",
-                        tool_call_id: academicToolCallId,
-                        content: academicResultsToToolResult(academicResults),
-                    },
-                });
-            }
-            catch (e) {
-                academicText = e instanceof Error ? e.message : String(e);
-                emit(config, {
-                    type: "tool_call_result",
-                    data: {
-                        thread_id: s.threadId,
-                        id: researcherId,
-                        agent: "researcher",
-                        role: "tool",
-                        tool_call_id: academicToolCallId,
-                        content: JSON.stringify([{ type: "page", title: academicText, url: "", content: "" }]),
-                    },
-                });
-            }
-        }
-        emit(config, {
-            type: "message_chunk",
-            data: {
-                thread_id: s.threadId,
-                id: researcherId,
-                agent: "researcher",
-                role: "assistant",
-                finish_reason: "stop",
-            },
-        });
-        const updates = [
-            s.backgroundInvestigationResults ? `Background investigation:\n${s.backgroundInvestigationResults}` : null,
-            retrievalText ? `Retrieved resources:\n${retrievalText}` : null,
-            academicText ? `Academic literature search:\n${academicText}` : null,
-        ].filter((x) => Boolean(x));
-        const next = {
-            ...s,
-            observations: [...s.observations, ...updates],
-        };
-        store.set(next);
-        return { observations: next.observations };
-    };
-    const reporterNode = async (s, config) => {
-        const reporterId = newMessageId();
-        const sources = [
-            ...s.resources.map((r) => ({ title: r.title, uri: r.uri })),
-            ...extractObservationSources(s.observations),
-        ];
-        const style = s.reportStyle;
-        const observations = s.observations;
-        const planForReport = s.currentPlan ??
-            buildFallbackPlan({
-                query: s.researchTopic,
-                maxSteps: s.maxStepNum,
-                enableWebSearch: s.enableWebSearch,
-            });
-        if (!llm) {
-            const fallback = [
-                `# ${s.researchTopic || planForReport.title || "Report"}`,
-                "",
-                `Style: ${style ?? "default"}`,
-                "",
-                "## Plan",
-                planForReport.steps.map((step, i) => `${i + 1}. ${step.title} — ${step.description}`).join("\n"),
-                "",
-                "## Notes",
-                observations.length ? observations.join("\n\n") : "(none)",
-                "",
-                "## Answer",
-                "LLM is not configured. Set BASIC_MODEL__MODEL and BASIC_MODEL__API_KEY to enable full academic report generation.",
-            ].join("\n");
-            emit(config, {
-                type: "message_chunk",
-                data: {
-                    thread_id: s.threadId,
-                    id: reporterId,
-                    agent: "reporter",
-                    role: "assistant",
-                    content: fallback,
-                },
-            });
-            emit(config, {
-                type: "message_chunk",
-                data: {
-                    thread_id: s.threadId,
-                    id: reporterId,
-                    agent: "reporter",
-                    role: "assistant",
-                    finish_reason: "stop",
-                },
-            });
-            return {};
-        }
-        const reportPrompt = buildReporterPrompt({
-            query: s.researchTopic,
-            locale: s.locale,
-            style,
-            plan: planForReport,
-            observations,
-            sources,
-        });
-        emit(config, {
-            type: "message_chunk",
-            data: {
-                thread_id: s.threadId,
-                id: reporterId,
-                agent: "reporter",
-                role: "assistant",
-                reasoning_content: "Writing…",
-            },
-        });
-        try {
-            for await (const delta of llm.streamChatCompletions({
-                messages: [
-                    { role: "system", content: reportPrompt.system },
-                    { role: "user", content: reportPrompt.user },
-                ],
-                ...(config?.signal ? { signal: config.signal } : {}),
-            })) {
-                if (delta.reasoningContent) {
-                    emit(config, {
-                        type: "message_chunk",
-                        data: {
-                            thread_id: s.threadId,
-                            id: reporterId,
-                            agent: "reporter",
-                            role: "assistant",
-                            reasoning_content: delta.reasoningContent,
-                        },
-                    });
+        for await (const chunk of execStream) {
+            if (Array.isArray(chunk) && chunk.length === 2) {
+                const [mode, payload] = chunk;
+                if (mode === "custom") {
+                    const event = payload;
+                    yield event;
                 }
-                if (delta.content) {
-                    const cleaned = stripThinkTags(delta.content);
-                    if (!cleaned)
-                        continue;
-                    emit(config, {
-                        type: "message_chunk",
-                        data: {
-                            thread_id: s.threadId,
-                            id: reporterId,
-                            agent: "reporter",
-                            role: "assistant",
-                            content: cleaned,
-                        },
-                    });
+                if (mode === "values") {
+                    execState = payload;
                 }
             }
         }
-        catch (e) {
-            const message = e instanceof Error ? e.message : String(e);
-            emit(config, {
-                type: "message_chunk",
-                data: {
-                    thread_id: s.threadId,
-                    id: reporterId,
-                    agent: "reporter",
-                    role: "assistant",
-                    content: `\n\n[reporter_error] ${message}`,
-                },
-            });
-        }
-        emit(config, {
-            type: "message_chunk",
-            data: {
-                thread_id: s.threadId,
-                id: reporterId,
-                agent: "reporter",
-                role: "assistant",
-                finish_reason: "stop",
-            },
-        });
-        return {};
-    };
-    const executionGraph = new StateGraph(PlanningState)
-        .addNode("researcher", researcherNode)
-        .addNode("reporter", reporterNode)
-        .addEdge(START, "researcher")
-        .addEdge("researcher", "reporter")
-        .addEdge("reporter", END)
-        .compile();
-    let execState = {
-        ...finalPlanningState,
-        ...state,
-        incomingText,
-        interruptFeedback: request.interrupt_feedback,
-        isFeedback,
-        done: "none",
-    };
-    const execStream = await executionGraph.stream(execState, {
-        streamMode: ["custom", "values"],
-        ...(signal ? { signal } : {}),
-    });
-    for await (const chunk of execStream) {
-        if (Array.isArray(chunk) && chunk.length === 2) {
-            const [mode, payload] = chunk;
-            if (mode === "custom") {
-                const event = payload;
-                yield event;
-            }
-            if (mode === "values") {
-                execState = payload;
-            }
-        }
+        return;
     }
-    return;
+    catch (e) {
+        runStatus = signal?.aborted ? "aborted" : "error";
+        trace?.error(e, currentSpanId ? { spanId: currentSpanId } : {});
+        throw e;
+    }
+    finally {
+        if (signal?.aborted)
+            runStatus = "aborted";
+        trace?.runEnded(runStatus, { reason: runEndReason });
+        await trace?.flush();
+    }
 }

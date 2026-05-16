@@ -17,6 +17,7 @@ import { ThreadStore } from "./runtime/thread-store.js";
 import { closeSse, setupSse, writeSseEvent } from "./sse.js";
 import { isLanceDbEnabled } from "./rag/config.js";
 import { indexLocalResource } from "./rag/lancedb-store.js";
+import { listTraceRuns, readLatestTraceRun, readTraceRun, TraceRecorder } from "./trace/recorder.js";
 const EnvSchema = z.object({
     PORT: z.coerce.number().int().positive().default(8000),
     ALLOWED_ORIGINS: z
@@ -452,6 +453,49 @@ app.post("/api/rag/upload", async (request, reply) => {
         return reply;
     }
 });
+app.get("/api/traces/:threadId/latest", async (request, reply) => {
+    const params = request.params;
+    const threadId = String(params.threadId ?? "");
+    if (!threadId) {
+        reply.code(400).send(toDetailError("Missing thread id"));
+        return reply;
+    }
+    const latest = await readLatestTraceRun(threadId);
+    if (!latest) {
+        reply.code(404).send(toDetailError("Trace not found"));
+        return reply;
+    }
+    reply.send(latest);
+    return reply;
+});
+app.get("/api/traces/:threadId/:runId", async (request, reply) => {
+    const params = request.params;
+    const threadId = String(params.threadId ?? "");
+    const runId = String(params.runId ?? "");
+    if (!threadId || !runId) {
+        reply.code(400).send(toDetailError("Missing trace parameters"));
+        return reply;
+    }
+    try {
+        const events = await readTraceRun(threadId, runId);
+        reply.send({ thread_id: threadId, run_id: runId, events });
+        return reply;
+    }
+    catch {
+        reply.code(404).send(toDetailError("Trace not found"));
+        return reply;
+    }
+});
+app.get("/api/traces/:threadId", async (request, reply) => {
+    const params = request.params;
+    const threadId = String(params.threadId ?? "");
+    if (!threadId) {
+        reply.code(400).send(toDetailError("Missing thread id"));
+        return reply;
+    }
+    reply.send({ thread_id: threadId, runs: await listTraceRuns(threadId) });
+    return reply;
+});
 app.post("/api/chat/stream", async (request, reply) => {
     const origin = typeof request.headers.origin === "string" ? request.headers.origin : undefined;
     applyCorsHeaders(origin, reply);
@@ -472,11 +516,13 @@ app.post("/api/chat/stream", async (request, reply) => {
     const abortController = new AbortController();
     const onClose = () => abortController.abort();
     reply.raw.on("close", onClose);
+    const trace = TraceRecorder.create({ threadId: parsed.thread_id });
     try {
         for await (const event of runChatWorkflow({
             request: parsed,
             store: threadStore,
             signal: abortController.signal,
+            trace,
         })) {
             writeSseEvent(reply, { event: event.type, data: JSON.stringify(event.data) });
         }

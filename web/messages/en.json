@@ -163,7 +163,15 @@
       "nowPlayingPodcast": "Now playing podcast...",
       "podcast": "Podcast",
       "errorGeneratingPodcast": "Error when generating podcast. Please try again.",
-      "downloadPodcast": "Download podcast"
+      "downloadPodcast": "Download podcast",
+      "trace": {
+        "title": "Trace",
+        "run": "Run",
+        "refresh": "Refresh",
+        "loading": "Loading trace...",
+        "empty": "No trace events yet.",
+        "noTrace": "No trace run yet"
+      }
     },
     "evaluation": {
       "title": "Report Quality Evaluation",
