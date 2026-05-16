@@ -3,7 +3,7 @@
 
 import { MagicWandIcon } from "@radix-ui/react-icons";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowUp, Lightbulb, X } from "lucide-react";
+import { ArrowUp, FileText, Lightbulb, Paperclip, X } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useCallback, useRef, useState } from "react";
 
@@ -16,6 +16,7 @@ import { Tooltip } from "~/components/deer-flow/tooltip";
 import { BorderBeam } from "~/components/magicui/border-beam";
 import { Button } from "~/components/ui/button";
 import { enhancePrompt } from "~/core/api";
+import { resolveServiceURL } from "~/core/api/resolve-service-url";
 import { useConfig } from "~/core/api/hooks";
 import type { Option, Resource } from "~/core/messages";
 import {
@@ -60,11 +61,14 @@ export function InputBox({
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<MessageInputRef>(null);
   const feedbackRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Enhancement state
   const [isEnhancing, setIsEnhancing] = useState(false);
   const [isEnhanceAnimating, setIsEnhanceAnimating] = useState(false);
   const [currentPrompt, setCurrentPrompt] = useState("");
+  const [uploadingResource, setUploadingResource] = useState(false);
+  const [attachedResources, setAttachedResources] = useState<Resource[]>([]);
 
   const handleSendMessage = useCallback(
     (message: string, resources: Array<Resource>) => {
@@ -75,18 +79,54 @@ export function InputBox({
           return;
         }
         if (onSend) {
+          const mergedResources = [...attachedResources, ...resources].filter(
+            (resource, index, all) => all.findIndex((item) => item.uri === resource.uri) === index,
+          );
           onSend(message, {
             interruptFeedback: feedback?.option.value,
-            resources,
+            resources: mergedResources,
           });
+          setAttachedResources([]);
           onRemoveFeedback?.();
           // Clear enhancement animation after sending
           setIsEnhanceAnimating(false);
         }
       }
     },
-    [responding, onCancel, onSend, feedback, onRemoveFeedback],
+    [responding, onCancel, onSend, feedback, onRemoveFeedback, attachedResources],
   );
+
+  const handleUploadResource = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (file.size === 0) {
+      event.target.value = "";
+      return;
+    }
+
+    setUploadingResource(true);
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      const response = await fetch(resolveServiceURL("rag/upload"), {
+        method: "POST",
+        body: formData,
+      });
+      if (!response.ok) throw new Error(`Upload failed: ${response.status}`);
+      const resource = (await response.json()) as Resource;
+      setAttachedResources((prev) =>
+        [...prev, resource].filter(
+          (item, index, all) => all.findIndex((candidate) => candidate.uri === item.uri) === index,
+        ),
+      );
+    } catch (error) {
+      console.error("Failed to upload resource:", error);
+    } finally {
+      setUploadingResource(false);
+      event.target.value = "";
+    }
+  }, []);
 
   const handleEnhancePrompt = useCallback(async () => {
     if (currentPrompt.trim() === "" || isEnhancing) {
@@ -212,6 +252,26 @@ export function InputBox({
           onChange={setCurrentPrompt}
         />
       </div>
+      {attachedResources.length > 0 && (
+        <div className="flex flex-wrap gap-2 px-4 pt-2">
+          {attachedResources.map((resource) => (
+            <div
+              key={resource.uri}
+              className="bg-muted text-muted-foreground flex items-center gap-1 rounded-full px-2 py-1 text-xs"
+            >
+              <FileText className="h-3 w-3" />
+              <span className="max-w-40 truncate">{resource.title}</span>
+              <button
+                type="button"
+                className="hover:text-foreground"
+                onClick={() => setAttachedResources((prev) => prev.filter((item) => item.uri !== resource.uri))}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="flex items-center px-4 py-2">
         <div className="flex grow gap-2">
           {config?.models?.reasoning && config.models.reasoning.length > 0 && (
@@ -276,6 +336,25 @@ export function InputBox({
           <ReportStyleDialog />
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".md,.txt"
+            className="sr-only"
+            onChange={handleUploadResource}
+            disabled={uploadingResource}
+          />
+          <Tooltip title={t("uploadResource")}>
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn("hover:bg-accent h-10 w-10", uploadingResource && "animate-pulse")}
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploadingResource || responding}
+            >
+              <Paperclip className="text-brand" />
+            </Button>
+          </Tooltip>
           <Tooltip title={t("enhancePrompt")}>
             <Button
               variant="ghost"

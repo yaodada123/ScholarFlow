@@ -128,6 +128,7 @@
         "description": "When enabled, ScholarFlow will perform a quick background search before planning. This is useful for academic topics that need recent context."
       },
       "enhancePrompt": "Enhance prompt with AI",
+      "uploadResource": "Upload material",
       "on": "On",
       "off": "Off"
     },

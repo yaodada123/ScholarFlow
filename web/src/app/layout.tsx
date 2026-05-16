@@ -34,7 +34,7 @@ export default async function RootLayout({
   
   return (
     <html lang={locale} className={`${geist.variable}`} suppressHydrationWarning>
-      <head>
+      <head suppressHydrationWarning>
         {/* Define isSpace function globally to fix markdown-it issues with Next.js + Turbopack
           https://github.com/markdown-it/markdown-it/issues/1082#issuecomment-2749656365 */}
         <Script id="markdown-it-fix" strategy="beforeInteractive">
@@ -47,7 +47,7 @@ export default async function RootLayout({
           `}
         </Script>
       </head>
-      <body className="bg-app">
+      <body className="bg-app" suppressHydrationWarning>
         <NextIntlClientProvider messages={messages}>
           <ThemeProviderWrapper>{children}</ThemeProviderWrapper>
           <Toaster />

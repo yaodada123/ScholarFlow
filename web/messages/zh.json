@@ -128,6 +128,7 @@
         "description": "启用后，ScholarFlow 会在规划前进行快速背景检索，适合需要近期背景信息的学术主题。"
       },
       "enhancePrompt": "用 AI 增强提示",
+      "uploadResource": "上传资料",
       "on": "开启",
       "off": "关闭"
     },
