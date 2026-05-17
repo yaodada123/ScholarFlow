@@ -7,6 +7,7 @@ import type { MCPServerMetadata } from "../mcp";
 import type { Resource } from "../messages";
 import { extractReplayIdFromSearchParams } from "../replay/get-replay-id";
 import { fetchStream } from "../sse";
+import type { AcademicSkillId } from "../store/settings-store";
 import { sleep } from "../utils";
 
 import { resolveServiceURL } from "./resolve-service-url";
@@ -52,6 +53,8 @@ export async function* chatStream(
     enable_deep_thinking?: boolean;
     enable_background_investigation: boolean;
     enable_web_search?: boolean;
+    enable_skills?: boolean;
+    selected_skills?: AcademicSkillId[];
     report_style?: "academic" | "popular_science" | "news" | "social_media" | "strategic_investment";
     mcp_settings?: {
       servers: Record<

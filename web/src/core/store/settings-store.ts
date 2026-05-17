@@ -7,6 +7,8 @@ import type { MCPServerMetadata, SimpleMCPServerMetadata } from "../mcp";
 
 const SETTINGS_KEY = "deerflow.settings";
 
+export type AcademicSkillId = "systematic-literature-review" | "academic-paper-review" | "deep-research";
+
 const DEFAULT_SETTINGS: SettingsState = {
   general: {
     autoAcceptedPlan: false,
@@ -22,6 +24,10 @@ const DEFAULT_SETTINGS: SettingsState = {
   },
   mcp: {
     servers: [],
+  },
+  skills: {
+    enableSkills: true,
+    selectedSkills: [],
   },
 };
 
@@ -40,6 +46,10 @@ export type SettingsState = {
   };
   mcp: {
     servers: MCPServerMetadata[];
+  };
+  skills: {
+    enableSkills: boolean;
+    selectedSkills: AcademicSkillId[];
   };
 };
 
@@ -61,16 +71,15 @@ export const loadSettings = () => {
   }
   const json = localStorage.getItem(SETTINGS_KEY);
   if (json) {
-    const settings = JSON.parse(json);
-    for (const key in DEFAULT_SETTINGS.general) {
-      if (!(key in settings.general)) {
-        settings.general[key as keyof SettingsState["general"]] =
-          DEFAULT_SETTINGS.general[key as keyof SettingsState["general"]];
-      }
-    }
+    const settings = JSON.parse(json) as Partial<SettingsState>;
+    const mergedSettings: SettingsState = {
+      general: { ...DEFAULT_SETTINGS.general, ...settings.general },
+      mcp: { ...DEFAULT_SETTINGS.mcp, ...settings.mcp },
+      skills: { ...DEFAULT_SETTINGS.skills, ...settings.skills },
+    };
 
     try {
-      useSettingsStore.setState(settings);
+      useSettingsStore.setState(mergedSettings);
     } catch (error) {
       console.error(error);
     }
@@ -95,7 +104,7 @@ export const getChatStreamSettings = () => {
         >;
       }
     | undefined = undefined;
-  const { mcp, general } = useSettingsStore.getState();
+  const { mcp, general, skills } = useSettingsStore.getState();
   const mcpServers = mcp.servers.filter((server) => server.enabled);
   if (mcpServers.length > 0) {
     mcpSettings = {
@@ -131,6 +140,8 @@ export const getChatStreamSettings = () => {
   }
   return {
     ...general,
+    enableSkills: skills.enableSkills,
+    selectedSkills: skills.selectedSkills,
     mcpSettings,
   };
 };

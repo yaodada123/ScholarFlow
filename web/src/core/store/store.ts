@@ -118,6 +118,8 @@ export async function sendMessage(
       enable_background_investigation:
         settings.enableBackgroundInvestigation ?? true,
       enable_web_search: settings.enableWebSearch ?? true,
+      enable_skills: settings.enableSkills ?? true,
+      selected_skills: settings.selectedSkills ?? [],
       max_plan_iterations: settings.maxPlanIterations,
       max_step_num: settings.maxStepNum,
       max_search_results: settings.maxSearchResults,

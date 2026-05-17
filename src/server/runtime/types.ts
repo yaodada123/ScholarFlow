@@ -1,4 +1,4 @@
-import type { ChatRequest, Resource } from "../schemas.js";
+import type { ChatRequest, Resource, SkillId } from "../schemas.js";
 import type { Plan } from "../workflow.js";
 
 export type Agent = "coordinator" | "planner" | "researcher" | "coder" | "reporter";
@@ -28,6 +28,8 @@ export type WorkflowState = {
   maxSearchResults: number;
   autoAcceptedPlan: boolean;
   reportStyle: ChatRequest["report_style"];
+  activeSkills: SkillId[];
+  skillSelectionReason: string | undefined;
 };
 
 export type Command = {

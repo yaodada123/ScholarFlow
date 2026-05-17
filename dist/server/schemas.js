@@ -4,6 +4,7 @@ export const ResourceSchema = z.object({
     title: z.string(),
     description: z.string().optional().default(""),
 });
+export const SkillIdSchema = z.enum(["systematic-literature-review", "academic-paper-review", "deep-research"]);
 export const ContentItemSchema = z.object({
     type: z.string(),
     text: z.string().optional(),
@@ -38,6 +39,8 @@ export const ChatRequestSchema = z.object({
         .optional()
         .default("academic"),
     enable_deep_thinking: z.boolean().optional().default(false),
+    enable_skills: z.boolean().optional().default(true),
+    selected_skills: z.array(SkillIdSchema).optional().default([]),
     enable_clarification: z.boolean().nullable().optional(),
     max_clarification_rounds: z.number().int().positive().nullable().optional(),
     interrupt_before_tools: z.array(z.string()).optional().default([]),

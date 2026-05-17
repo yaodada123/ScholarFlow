@@ -66,15 +66,17 @@ export function buildFallbackPlan(params) {
     };
 }
 export function buildPlannerPrompt(params) {
-    const { query, locale, maxSteps, enableWebSearch, backgroundInvestigationResults } = params;
+    const { query, locale, maxSteps, enableWebSearch, backgroundInvestigationResults, skillContext } = params;
     const system = "You are ScholarFlow Planner, an academic research planning agent. Output ONLY valid JSON (no markdown, no commentary).";
     const background = backgroundInvestigationResults
         ? `\n\nBackground investigation results:\n${backgroundInvestigationResults}`
         : "";
+    const skills = skillContext ? `\n\n${skillContext}\n` : "\n";
     const user = `Locale: ${locale}\n` +
         "Task: Create an academic topic-direction research plan for the user query.\n" +
         "The plan must first propose 2-4 candidate research topic directions, then plan evidence collection and report writing.\n" +
-        `Constraints: max_step_num=${maxSteps}, enable_web_search=${enableWebSearch}\n` +
+        `Constraints: max_step_num=${maxSteps}, enable_web_search=${enableWebSearch}` +
+        skills +
         "JSON schema:\n" +
         "{\n" +
         '  "title": string,\n' +
@@ -109,14 +111,16 @@ export function ensureTopicPlanFields(params) {
     };
 }
 export function buildPlannerEditPrompt(params) {
-    const { locale, query, currentPlan, instruction, maxSteps, enableWebSearch, backgroundInvestigationResults, } = params;
+    const { locale, query, currentPlan, instruction, maxSteps, enableWebSearch, backgroundInvestigationResults, skillContext, } = params;
     const system = "You are ScholarFlow Planner, an academic research planning agent. Output ONLY valid JSON (no markdown, no commentary).";
     const background = backgroundInvestigationResults
         ? `\n\nBackground investigation results:\n${backgroundInvestigationResults}`
         : "";
+    const skills = skillContext ? `\n\n${skillContext}\n` : "\n";
     const user = `Locale: ${locale}\n` +
         `User query: ${query}\n` +
-        `Constraints: max_step_num=${maxSteps}, enable_web_search=${enableWebSearch}\n` +
+        `Constraints: max_step_num=${maxSteps}, enable_web_search=${enableWebSearch}` +
+        skills +
         "You MUST revise the topic-direction plan based on the user instruction while preserving the topicCandidates and selectedTopic fields.\n\n" +
         `Current plan (JSON):\n${JSON.stringify(currentPlan, null, 2)}\n\n` +
         `User instruction:\n${instruction}${background}\n\n` +
@@ -124,15 +128,17 @@ export function buildPlannerEditPrompt(params) {
     return { system, user };
 }
 export function buildReporterPrompt(params) {
-    const { query, locale, style, plan, observations, sources } = params;
+    const { query, locale, style, plan, observations, sources, skillContext } = params;
     const system = "You are ScholarFlow Reporter, an academic research writing agent. Write a high-quality markdown research report. " +
-        "Ground claims in the provided observations and sources, include citations when sources are provided, and explicitly note limitations when evidence is incomplete.";
+        "Ground claims in the provided observations and sources, include citations when sources are provided, and explicitly note limitations when evidence is incomplete. " +
+        "When active academic skills provide an output template or method, follow those instructions before the default report sections.";
     const sourcesText = sources.length
         ? sources.map((s, i) => `- [${i + 1}] ${s.title} (${s.uri})`).join("\n")
         : "(none)";
+    const skills = skillContext ? `\n\n${skillContext}` : "";
     const user = `Locale: ${locale}\n` +
         `Report style: ${style ?? "default"}\n` +
-        `User query: ${query}\n\n` +
+        `User query: ${query}${skills}\n\n` +
         `Plan (JSON):\n${JSON.stringify(plan, null, 2)}\n\n` +
         `Observations:\n${observations.length ? observations.join("\n\n") : "(none)"}\n\n` +
         `Sources:\n${sourcesText}\n\n` +

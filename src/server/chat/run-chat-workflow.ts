@@ -2,10 +2,13 @@ import { randomUUID } from "node:crypto";
 
 import { Annotation, END, START, StateGraph, type LangGraphRunnableConfig } from "@langchain/langgraph";
 
-import type { ChatRequest } from "../schemas.js";
+import type { ChatRequest, SkillId } from "../schemas.js";
 import type { LlmConfig } from "../llm/env-models.js";
 import { loadLlmConfig } from "../llm/env-models.js";
 import { OpenAICompatibleClient } from "../llm/openai-compatible.js";
+import { formatSkillPromptBlock } from "../skills/prompt.js";
+import { getSkills } from "../skills/registry.js";
+import { selectSkills } from "../skills/selector.js";
 import { academicResultsToToolResult, academicSearch, formatAcademicResults } from "../tools/academic-search.js";
 import { retrieveResources } from "../tools/resources.js";
 import { webSearch } from "../tools/web-search.js";
@@ -66,6 +69,39 @@ function normalizeUserContent(request: ChatRequest): string {
   if (!lastUser) return "";
   if (typeof lastUser.content === "string") return lastUser.content;
   return lastUser.content.map((c) => c.text ?? "").join("");
+}
+
+function resolveActiveSkills(params: {
+  request: ChatRequest;
+  query: string;
+  existing: WorkflowState | undefined;
+  isFeedback: boolean;
+}): { activeSkills: SkillId[]; reason: string } {
+  const { request, query, existing, isFeedback } = params;
+  if (!request.enable_skills) return { activeSkills: [], reason: "skills disabled" };
+  if (request.selected_skills.length) return { activeSkills: request.selected_skills, reason: "manual selection" };
+  if (isFeedback && existing) {
+    return {
+      activeSkills: existing.activeSkills,
+      reason: existing.skillSelectionReason ?? "preserved from pending plan",
+    };
+  }
+  const selected = selectSkills({ query, resources: request.resources });
+  return {
+    activeSkills: selected.activeSkills.map((skill) => skill.id),
+    reason: selected.reason,
+  };
+}
+
+function hasSkill(state: Pick<WorkflowState, "activeSkills">, skillId: SkillId): boolean {
+  return state.activeSkills.includes(skillId);
+}
+
+function academicSearchLimit(state: Pick<WorkflowState, "activeSkills" | "maxSearchResults">): number {
+  if (hasSkill(state, "systematic-literature-review")) {
+    return Math.min(20, Math.max(10, state.maxSearchResults));
+  }
+  return state.maxSearchResults;
 }
 
 type CoordinatorDecision =
@@ -199,8 +235,10 @@ function makeBaseState(params: {
   request: ChatRequest;
   threadId: string;
   query: string;
+  activeSkills: SkillId[];
+  skillSelectionReason: string;
 }): WorkflowState {
-  const { request, threadId, query } = params;
+  const { request, threadId, query, activeSkills, skillSelectionReason } = params;
   return {
     threadId,
     locale: request.locale,
@@ -218,6 +256,8 @@ function makeBaseState(params: {
     maxSearchResults: request.max_search_results,
     autoAcceptedPlan: request.auto_accepted_plan,
     reportStyle: request.report_style,
+    activeSkills,
+    skillSelectionReason,
   };
 }
 
@@ -281,6 +321,8 @@ function upsertThreadState(params: {
   request: ChatRequest;
   query: string;
   isFeedback: boolean;
+  activeSkills: SkillId[];
+  skillSelectionReason: string;
 }): WorkflowState {
   const threadId = params.request.thread_id;
   const existing = params.store.get(threadId);
@@ -289,6 +331,8 @@ function upsertThreadState(params: {
       request: params.request,
       threadId,
       query: params.query,
+      activeSkills: params.activeSkills,
+      skillSelectionReason: params.skillSelectionReason,
     });
     params.store.set(created);
     return created;
@@ -304,6 +348,8 @@ function upsertThreadState(params: {
     maxSearchResults: params.request.max_search_results,
     autoAcceptedPlan: params.request.auto_accepted_plan,
     reportStyle: params.request.report_style,
+    activeSkills: params.activeSkills,
+    skillSelectionReason: params.skillSelectionReason,
     resources: params.request.resources.length ? params.request.resources : existing.resources,
     ...(params.isFeedback
       ? {}
@@ -341,19 +387,29 @@ export async function* runChatWorkflow(params: {
   let runStatus: TraceStatus = "ok";
   let runEndReason = "completed";
 
+  const isFeedback = request.interrupt_feedback === "accepted" || request.interrupt_feedback === "edit_plan";
+  const existing = store.get(request.thread_id);
+  const query = isFeedback ? (existing?.researchTopic ?? incomingText) : incomingText;
+  const skillSelection = resolveActiveSkills({ request, query, existing, isFeedback });
+
   trace?.runStarted({
     query: incomingText,
     resources: request.resources.length,
     enable_web_search: request.enable_web_search,
     enable_background_investigation: request.enable_background_investigation,
     interrupt_feedback: request.interrupt_feedback,
+    active_skills: skillSelection.activeSkills,
+    skill_selection_reason: skillSelection.reason,
   });
 
-  const isFeedback = request.interrupt_feedback === "accepted" || request.interrupt_feedback === "edit_plan";
-  const existing = store.get(request.thread_id);
-  const query = isFeedback ? (existing?.researchTopic ?? incomingText) : incomingText;
-
-  let state = upsertThreadState({ store, request, query, isFeedback });
+  let state = upsertThreadState({
+    store,
+    request,
+    query,
+    isFeedback,
+    activeSkills: skillSelection.activeSkills,
+    skillSelectionReason: skillSelection.reason,
+  });
 
   const llmCfg = pickLlmConfig({ enableDeepThinking: request.enable_deep_thinking });
   const llm = llmCfg ? new OpenAICompatibleClient(llmCfg) : null;
@@ -376,6 +432,8 @@ export async function* runChatWorkflow(params: {
     maxSearchResults: Annotation<number>(),
     autoAcceptedPlan: Annotation<boolean>(),
     reportStyle: Annotation<WorkflowState["reportStyle"]>(),
+    activeSkills: Annotation<WorkflowState["activeSkills"]>(),
+    skillSelectionReason: Annotation<WorkflowState["skillSelectionReason"]>(),
     incomingText: Annotation<string>(),
     interruptFeedback: Annotation<ChatRequest["interrupt_feedback"]>(),
     isFeedback: Annotation<boolean>(),
@@ -574,12 +632,13 @@ export async function* runChatWorkflow(params: {
     const academicToolCallId = newToolCallId();
     const webToolCallId = newToolCallId();
     const researcherId = newMessageId();
+    const maxAcademicResults = academicSearchLimit(s);
     const toolCalls: ToolCall[] = [
       {
         type: "tool_call",
         id: academicToolCallId,
         name: "academic_search",
-        args: { query: s.researchTopic, max_results: s.maxSearchResults },
+        args: { query: s.researchTopic, max_results: maxAcademicResults },
       },
       {
         type: "tool_call",
@@ -623,7 +682,7 @@ export async function* runChatWorkflow(params: {
     try {
       const results = await academicSearch({
         query: s.researchTopic,
-        maxResults: s.maxSearchResults,
+        maxResults: maxAcademicResults,
         ...(config?.signal ? { signal: config.signal } : {}),
       });
       academicText = formatAcademicResults(results);
@@ -712,6 +771,7 @@ export async function* runChatWorkflow(params: {
 
     const plannerId = newMessageId();
     const isEditing = s.interruptFeedback === "edit_plan";
+    const plannerSkillContext = formatSkillPromptBlock(getSkills(next.activeSkills), "planner");
     const prompt =
       isEditing && next.currentPlan
         ? buildPlannerEditPrompt({
@@ -722,6 +782,7 @@ export async function* runChatWorkflow(params: {
             maxSteps: next.maxStepNum,
             enableWebSearch: next.enableWebSearch,
             backgroundInvestigationResults: next.backgroundInvestigationResults,
+            skillContext: plannerSkillContext,
           })
         : buildPlannerPrompt({
             query: next.researchTopic,
@@ -729,6 +790,7 @@ export async function* runChatWorkflow(params: {
             maxSteps: next.maxStepNum,
             enableWebSearch: next.enableWebSearch,
             backgroundInvestigationResults: next.backgroundInvestigationResults,
+            skillContext: plannerSkillContext,
           });
 
     if (!llm) {
@@ -985,6 +1047,8 @@ export async function* runChatWorkflow(params: {
     },
     async () => {
     const researcherId = newMessageId();
+    const researcherSkillContext = formatSkillPromptBlock(getSkills(s.activeSkills), "researcher");
+    const maxAcademicResults = academicSearchLimit(s);
     const retrieved = await retrieveResources({
       query: s.researchTopic,
       resources: s.resources,
@@ -1006,7 +1070,7 @@ export async function* runChatWorkflow(params: {
               type: "tool_call" as const,
               id: academicToolCallId,
               name: "academic_search",
-              args: { query: s.researchTopic, max_results: s.maxSearchResults },
+              args: { query: s.researchTopic, max_results: maxAcademicResults },
             },
           ]
         : []),
@@ -1078,7 +1142,7 @@ export async function* runChatWorkflow(params: {
       try {
         const academicResults = await academicSearch({
           query: s.researchTopic,
-          maxResults: s.maxSearchResults,
+          maxResults: maxAcademicResults,
           ...(config?.signal ? { signal: config.signal } : {}),
         });
         academicText = formatAcademicResults(academicResults);
@@ -1121,6 +1185,13 @@ export async function* runChatWorkflow(params: {
     });
 
     const updates = [
+      researcherSkillContext ? `Active research skill guidance:\n${researcherSkillContext}` : null,
+      hasSkill(s, "academic-paper-review") && s.resources.length
+        ? "Paper review evidence note: prioritize uploaded or selected paper content. If the available content is incomplete, the final review must state that limitation."
+        : null,
+      hasSkill(s, "deep-research")
+        ? "Deep research evidence note: synthesize across multiple angles, including facts, examples, current trends, comparisons, and limitations when available."
+        : null,
       s.backgroundInvestigationResults ? `Background investigation:\n${s.backgroundInvestigationResults}` : null,
       retrievalText ? `Retrieved resources:\n${retrievalText}` : null,
       academicText ? `Academic literature search:\n${academicText}` : null,
@@ -1210,6 +1281,7 @@ export async function* runChatWorkflow(params: {
       plan: planForReport,
       observations,
       sources,
+      skillContext: formatSkillPromptBlock(getSkills(s.activeSkills), "reporter"),
     });
 
     emit(config, {

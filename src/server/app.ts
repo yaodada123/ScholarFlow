@@ -16,6 +16,7 @@ import { evaluateReportDeterministic, parseLlmEvaluation } from "./evaluation/re
 import { getConfiguredModels, loadLlmConfig } from "./llm/env-models.js";
 import { OpenAICompatibleClient } from "./llm/openai-compatible.js";
 import { runChatWorkflow } from "./chat/run-chat-workflow.js";
+import { allSkills } from "./skills/registry.js";
 import { ThreadStore } from "./runtime/thread-store.js";
 import { closeSse, setupSse, writeSseEvent } from "./sse.js";
 import { isLanceDbEnabled } from "./rag/config.js";
@@ -225,6 +226,16 @@ const McpServerMetadataRequestSchema = z.discriminatedUnion("transport", [
     headers: z.record(z.string(), z.string()).optional().default({}),
   }),
 ]);
+
+app.get("/api/skills", async () => ({
+  skills: allSkills.map((skill) => ({
+    id: skill.id,
+    name: skill.name,
+    description: skill.description,
+    triggers: skill.triggers,
+    builtin: true,
+  })),
+}));
 
 app.get("/api/config", async () => {
   const models = getConfiguredModels();
