@@ -6,16 +6,17 @@ import { useMemo } from "react";
 
 import { env } from "~/env";
 
-import { extractReplayIdFromSearchParams } from "./get-replay-id";
+import { parseReplaySourceFromSearchParams } from "./get-replay-id";
 
 export function useReplay() {
   const searchParams = useSearchParams();
-  const replayId = useMemo(
-    () => extractReplayIdFromSearchParams(searchParams.toString()),
+  const replaySource = useMemo(
+    () => parseReplaySourceFromSearchParams(searchParams.toString()),
     [searchParams],
   );
   return {
-    isReplay: replayId != null || env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY,
-    replayId,
+    isReplay: replaySource != null || env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY,
+    replayId: replaySource?.kind === "static" ? replaySource.replayId : null,
+    replaySource,
   };
 }

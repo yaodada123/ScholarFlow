@@ -82,3 +82,11 @@ export type ChatEvent =
   | ToolCallChunksEvent
   | ToolCallResultEvent
   | InterruptEvent;
+
+export type ReplayRunSummary = {
+  thread_id: string;
+  run_id: string;
+  updated_at: string;
+  event_count: number;
+  title?: string;
+};

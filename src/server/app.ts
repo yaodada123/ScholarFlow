@@ -11,7 +11,7 @@ import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import { z } from "zod";
 
-import { ChatRequestSchema } from "./schemas.js";
+import { ChatRequestSchema, type ChatRequest } from "./schemas.js";
 import { evaluateReportDeterministic, parseLlmEvaluation } from "./evaluation/report-evaluator.js";
 import { getConfiguredModels, loadLlmConfig } from "./llm/env-models.js";
 import { OpenAICompatibleClient } from "./llm/openai-compatible.js";
@@ -22,6 +22,7 @@ import { closeSse, setupSse, writeSseEvent } from "./sse.js";
 import { isLanceDbEnabled } from "./rag/config.js";
 import { buildLocalResource, extractTextFromRagFile, isAllowedRagFilename, RagTextExtractionError, ragDir, sanitizeRagFilename } from "./rag/document-text.js";
 import { indexLocalResource } from "./rag/lancedb-store.js";
+import { listReplayRuns, listAllReplayRuns, readLatestReplayRun, readReplayRun, ReplayRecorder, type ReplayChatEvent } from "./replay/recorder.js";
 import { listTraceRuns, readLatestTraceRun, readTraceRun, TraceRecorder } from "./trace/recorder.js";
 
 const EnvSchema = z.object({
@@ -110,6 +111,35 @@ function sanitizeFilename(input: string): string {
   const cleaned = base.replaceAll(/[\\/]/g, "_").trim();
   if (!cleaned) return "upload.txt";
   return cleaned.slice(0, 200);
+}
+
+function textFromChatContent(content: ChatRequest["messages"][number]["content"]): string {
+  if (typeof content === "string") return content.trim();
+  const parts = content.flatMap((item) => {
+    if (typeof item.text === "string" && item.text.trim()) return [item.text.trim()];
+    if (item.image_url) return ["[image]"];
+    return [];
+  });
+  return parts.join("\n").trim();
+}
+
+function buildReplayUserMessageEvent(params: { threadId: string; runId: string; request: ChatRequest }): ReplayChatEvent | null {
+  const userMessage = params.request.messages.slice().reverse().find((message) => message.role === "user");
+  if (!userMessage) return null;
+  const content = textFromChatContent(userMessage.content);
+  if (!content) return null;
+
+  return {
+    type: "message_chunk",
+    data: {
+      id: `user-${params.runId}`,
+      thread_id: params.threadId,
+      agent: "coordinator",
+      role: "user",
+      content,
+      finish_reason: "stop",
+    },
+  };
 }
 
 async function ensureRagDir(): Promise<void> {
@@ -523,6 +553,63 @@ app.post("/api/rag/upload", async (request: FastifyRequest, reply: FastifyReply)
   }
 });
 
+app.get("/api/replays", async (request: FastifyRequest, reply: FastifyReply) => {
+  const query = request.query as Record<string, unknown>;
+  const limitRaw = typeof query.limit === "string" ? Number(query.limit) : undefined;
+  const limit = Number.isFinite(limitRaw) ? limitRaw : undefined;
+  reply.send({ replays: await listAllReplayRuns({ ...(limit ? { limit } : {}) }) });
+  return reply;
+});
+
+app.get("/api/replays/:threadId/latest", async (request: FastifyRequest, reply: FastifyReply) => {
+  const params = request.params as Record<string, unknown>;
+  const threadId = String(params.threadId ?? "");
+  if (!threadId) {
+    reply.code(400).send(toDetailError("Missing thread id"));
+    return reply;
+  }
+
+  const latest = await readLatestReplayRun(threadId);
+  if (!latest) {
+    reply.code(404).send(toDetailError("Replay not found"));
+    return reply;
+  }
+
+  reply.send(latest);
+  return reply;
+});
+
+app.get("/api/replays/:threadId/:runId", async (request: FastifyRequest, reply: FastifyReply) => {
+  const params = request.params as Record<string, unknown>;
+  const threadId = String(params.threadId ?? "");
+  const runId = String(params.runId ?? "");
+  if (!threadId || !runId) {
+    reply.code(400).send(toDetailError("Missing replay parameters"));
+    return reply;
+  }
+
+  try {
+    const events = await readReplayRun(threadId, runId);
+    reply.send({ thread_id: threadId, run_id: runId, events });
+    return reply;
+  } catch {
+    reply.code(404).send(toDetailError("Replay not found"));
+    return reply;
+  }
+});
+
+app.get("/api/replays/:threadId", async (request: FastifyRequest, reply: FastifyReply) => {
+  const params = request.params as Record<string, unknown>;
+  const threadId = String(params.threadId ?? "");
+  if (!threadId) {
+    reply.code(400).send(toDetailError("Missing thread id"));
+    return reply;
+  }
+
+  reply.send({ thread_id: threadId, runs: await listReplayRuns(threadId) });
+  return reply;
+});
+
 app.get("/api/traces/:threadId/latest", async (request: FastifyRequest, reply: FastifyReply) => {
   const params = request.params as Record<string, unknown>;
   const threadId = String(params.threadId ?? "");
@@ -596,6 +683,9 @@ app.post("/api/chat/stream", async (request: FastifyRequest, reply: FastifyReply
   reply.raw.on("close", onClose);
 
   const trace = TraceRecorder.create({ threadId: parsed.thread_id });
+  const replay = ReplayRecorder.create({ threadId: parsed.thread_id, runId: trace.runId });
+  const userReplayEvent = buildReplayUserMessageEvent({ threadId: parsed.thread_id, runId: trace.runId, request: parsed });
+  if (userReplayEvent) replay.record(userReplayEvent);
 
   try {
     for await (const event of runChatWorkflow({
@@ -604,6 +694,7 @@ app.post("/api/chat/stream", async (request: FastifyRequest, reply: FastifyReply
       signal: abortController.signal,
       trace,
     })) {
+      replay.record(event);
       writeSseEvent(reply, { event: event.type, data: JSON.stringify(event.data) });
     }
   } catch (e) {
@@ -611,6 +702,7 @@ app.post("/api/chat/stream", async (request: FastifyRequest, reply: FastifyReply
     writeSseEvent(reply, { event: "error", data: JSON.stringify({ error: message }) });
   } finally {
     reply.raw.off("close", onClose);
+    await replay.flush();
     closeSse(reply);
   }
   return reply;

@@ -3,7 +3,7 @@
 
 import { CheckCircle2, Clock3, RefreshCcw, Timer, Wrench, XCircle } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -143,7 +143,7 @@ export function AgentTraceBlock({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const loadTrace = async () => {
+  const loadTrace = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -155,7 +155,7 @@ export function AgentTraceBlock({
     } finally {
       setLoading(false);
     }
-  };
+  }, [threadId]);
 
   useEffect(() => {
     if (!active) return;
@@ -164,11 +164,15 @@ export function AgentTraceBlock({
       void loadTrace();
     }, 2000);
     return () => window.clearInterval(timer);
-  }, [active, threadId]);
+  }, [active, loadTrace]);
 
   const spans = useMemo(() => buildSpanViews(events), [events]);
   const runEnded = findLastEvent(events, "run_ended");
   const runStarted = events.find((event) => event.type === "run_started");
+  const runQuery =
+    typeof runStarted?.input === "object" && runStarted.input !== null && "query" in runStarted.input
+      ? (runStarted.input as { query?: unknown }).query
+      : null;
 
   return (
     <div className={cn("space-y-4", className)}>
@@ -196,9 +200,9 @@ export function AgentTraceBlock({
           </Badge>
           <Badge variant="outline">{events.length} events</Badge>
         </div>
-        {typeof runStarted?.input === "object" && runStarted.input !== null && "query" in runStarted.input && (
+        {typeof runQuery === "string" && runQuery && (
           <div className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
-            {String((runStarted.input as { query?: unknown }).query ?? "")}
+            {runQuery}
           </div>
         )}
         {error && <div className="text-xs text-red-600">{error}</div>}

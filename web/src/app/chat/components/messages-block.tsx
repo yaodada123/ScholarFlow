@@ -25,6 +25,7 @@ import { cn } from "~/lib/utils";
 import { ConversationStarter } from "./conversation-starter";
 import { InputBox } from "./input-box";
 import { MessageListView } from "./message-list-view";
+import { ReplayHistoryPopover } from "./replay-history-popover";
 import { Welcome } from "./welcome";
 
 export function MessagesBlock({ className }: { className?: string }) {
@@ -59,7 +60,9 @@ export function MessagesBlock({ className }: { className?: string }) {
             abortSignal: abortController.signal,
           },
         );
-      } catch {}
+      } catch (error) {
+        console.error("Failed to send message", error);
+      }
     },
     [feedback],
   );
@@ -98,6 +101,9 @@ export function MessagesBlock({ className }: { className?: string }) {
       )}
       {!isReplay ? (
         <div className="relative flex h-42 shrink-0 pb-4">
+          {!env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY && (
+            <ReplayHistoryPopover className="absolute right-0 -top-10" />
+          )}
           <InputBox
             className="h-full w-full"
             responding={responding}

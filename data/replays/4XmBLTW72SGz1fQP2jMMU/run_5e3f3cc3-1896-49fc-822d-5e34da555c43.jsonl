@@ -1,0 +1,4 @@
+{"type":"message_chunk","data":{"id":"user-run_5e3f3cc3-1896-49fc-822d-5e34da555c43","thread_id":"4XmBLTW72SGz1fQP2jMMU","agent":"coordinator","role":"user","content":"调研多智能体学术助手的现状，并输出一份结构化报告。","finish_reason":"stop"}}
+{"type":"message_chunk","data":{"thread_id":"4XmBLTW72SGz1fQP2jMMU","id":"run-07be1b7d-8aaf-43a8-8eae-0bb01f802f92","agent":"coordinator","role":"assistant","content":"收到。我会先制定一个学术研究计划，然后检索相关资料并撰写结构化研究报告。"}}
+{"type":"message_chunk","data":{"thread_id":"4XmBLTW72SGz1fQP2jMMU","id":"run-07be1b7d-8aaf-43a8-8eae-0bb01f802f92","agent":"coordinator","role":"assistant","finish_reason":"stop"}}
+{"type":"message_chunk","data":{"thread_id":"4XmBLTW72SGz1fQP2jMMU","id":"run-16fc6a45-11ad-4693-8b85-b0e8f1428a95","agent":"planner","role":"assistant","reasoning_content":"Planning…"}}

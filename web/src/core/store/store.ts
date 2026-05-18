@@ -34,6 +34,7 @@ export const useStore = create<{
   openResearch: (researchId: string | null) => void;
   closeResearch: () => void;
   setOngoingResearch: (researchId: string | null) => void;
+  resetConversation: () => void;
 }>((set) => ({
   responding: false,
   threadId: THREAD_ID,
@@ -79,6 +80,20 @@ export const useStore = create<{
   },
   setOngoingResearch(researchId: string | null) {
     set({ ongoingResearchId: researchId });
+  },
+  resetConversation() {
+    set({
+      responding: false,
+      messageIds: [],
+      messages: new Map<string, Message>(),
+      researchIds: [],
+      researchPlanIds: new Map<string, string>(),
+      researchReportIds: new Map<string, string>(),
+      researchActivityIds: new Map<string, string[]>(),
+      researchQueries: new Map<string, string>(),
+      ongoingResearchId: null,
+      openResearchId: null,
+    });
   },
 }));
 
@@ -331,6 +346,10 @@ export function openResearch(researchId: string | null) {
 
 export function closeResearch() {
   useStore.getState().closeResearch();
+}
+
+export function resetConversation() {
+  useStore.getState().resetConversation();
 }
 
 export async function listenToPodcast(researchId: string) {

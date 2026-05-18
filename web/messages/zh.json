@@ -211,6 +211,13 @@
       "replayModeDescription": "你现在处于 ScholarFlow 回放模式。点击右侧的“播放”按钮开始。",
       "play": "播放",
       "fastForward": "快进",
+      "history": "历史回放",
+      "historyDescription": "选择一次已保存的对话进行回放。",
+      "loadingHistory": "正在加载回放...",
+      "emptyHistory": "暂无保存的回放。",
+      "historyLoadFailed": "加载回放历史失败。",
+      "untitledReplay": "未命名回放",
+      "eventCount": "{count} 个事件",
       "demoNotice": "* 此网站仅用于演示目的。如果您想尝试自己的问题，请",
       "clickHere": "点击这里",
       "cloneLocally": "在本地克隆并运行它。"

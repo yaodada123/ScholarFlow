@@ -211,6 +211,13 @@
       "replayModeDescription": "You are now in ScholarFlow replay mode. Click the \"Play\" button on the right to start.",
       "play": "Play",
       "fastForward": "Fast Forward",
+      "history": "Replay History",
+      "historyDescription": "Choose a saved conversation to replay.",
+      "loadingHistory": "Loading replays...",
+      "emptyHistory": "No saved replays yet.",
+      "historyLoadFailed": "Failed to load replay history.",
+      "untitledReplay": "Untitled replay",
+      "eventCount": "{count} events",
       "demoNotice": "* This site is for demo purposes only. If you want to try your own question, please",
       "clickHere": "click here",
       "cloneLocally": "to clone it locally and run it."

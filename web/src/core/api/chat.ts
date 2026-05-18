@@ -5,11 +5,12 @@ import { env } from "~/env";
 
 import type { MCPServerMetadata } from "../mcp";
 import type { Resource } from "../messages";
-import { extractReplayIdFromSearchParams } from "../replay/get-replay-id";
+import { parseReplaySourceFromSearchParams } from "../replay/get-replay-id";
 import { fetchStream } from "../sse";
 import type { AcademicSkillId } from "../store/settings-store";
 import { sleep } from "../utils";
 
+import { fetchApiReplayEvents } from "./replays";
 import { resolveServiceURL } from "./resolve-service-url";
 import type { ChatEvent } from "./types";
 
@@ -69,11 +70,12 @@ export async function* chatStream(
   },
   options: { abortSignal?: AbortSignal } = {},
 ) {
+  const urlParams = new URLSearchParams(location.search);
   if (
     env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY ||
-    location.search.includes("mock") ||
-    location.search.includes("replay=")
-  ) 
+    urlParams.has("mock") ||
+    parseReplaySourceFromSearchParams(location.search) != null
+  )
     return yield* chatReplayStream(userMessage, params, options);
   
   try{
@@ -133,46 +135,70 @@ async function* chatReplayStream(
     }
     fastForwardReplaying = true;
   } else {
-    const replayId = extractReplayIdFromSearchParams(window.location.search);
-    if (replayId) {
-      replayFilePath = `/replay/${replayId}.txt`;
+    const replaySource = parseReplaySourceFromSearchParams(window.location.search);
+    if (replaySource?.kind === "api") {
+      const events = await fetchApiReplayEvents({
+        threadId: replaySource.threadId,
+        runId: replaySource.runId,
+        abortSignal: options.abortSignal,
+      });
+      yield* yieldReplayEventsWithTiming(events);
+      return;
+    }
+    if (replaySource?.kind === "static" && replaySource.replayId) {
+      replayFilePath = `/replay/${replaySource.replayId}.txt`;
     } else {
       // Fallback to a default replay
       replayFilePath = `/replay/eiffel-tower-vs-tallest-building.txt`;
     }
   }
+
   const text = await fetchReplay(replayFilePath, {
     abortSignal: options.abortSignal,
   });
+  yield* yieldReplayEventsWithTiming(parseReplayText(text));
+}
+
+function parseReplayText(text: string): ChatEvent[] {
   const normalizedText = text.replace(/\r\n/g, "\n");
   const chunks = normalizedText.split("\n\n");
+  const events: ChatEvent[] = [];
   for (const chunk of chunks) {
-    const [eventRaw, dataRaw] = chunk.split("\n") as [string, string];
-    const [, event] = eventRaw.split("event: ", 2) as [string, string];
-    const [, data] = dataRaw.split("data: ", 2) as [string, string];
+    const lines = chunk.split("\n");
+    const eventRaw = lines.find((line) => line.startsWith("event: "));
+    const dataLines = lines
+      .filter((line) => line.startsWith("data: "))
+      .map((line) => line.slice("data: ".length));
+    if (!eventRaw || dataLines.length === 0) continue;
 
     try {
-      const chatEvent = {
-        type: event,
-        data: JSON.parse(data),
-      } as ChatEvent;
-      if (chatEvent.type === "message_chunk") {
-        if (!chatEvent.data.finish_reason) {
-          await sleepInReplay(50);
-        }
-      } else if (chatEvent.type === "tool_call_result") {
-        await sleepInReplay(500);
-      }
-      yield chatEvent;
-      if (chatEvent.type === "tool_call_result") {
-        await sleepInReplay(800);
-      } else if (chatEvent.type === "message_chunk") {
-        if (chatEvent.data.role === "user") {
-          await sleepInReplay(500);
-        }
-      }
+      events.push({
+        type: eventRaw.slice("event: ".length),
+        data: JSON.parse(dataLines.join("\n")),
+      } as ChatEvent);
     } catch (e) {
       console.error(e);
+    }
+  }
+  return events;
+}
+
+async function* yieldReplayEventsWithTiming(events: Iterable<ChatEvent>): AsyncIterable<ChatEvent> {
+  for (const chatEvent of events) {
+    if (chatEvent.type === "message_chunk") {
+      if (!chatEvent.data.finish_reason) {
+        await sleepInReplay(50);
+      }
+    } else if (chatEvent.type === "tool_call_result") {
+      await sleepInReplay(500);
+    }
+    yield chatEvent;
+    if (chatEvent.type === "tool_call_result") {
+      await sleepInReplay(800);
+    } else if (chatEvent.type === "message_chunk") {
+      if (chatEvent.data.role === "user") {
+        await sleepInReplay(500);
+      }
     }
   }
 }
