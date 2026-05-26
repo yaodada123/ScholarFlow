@@ -27,6 +27,10 @@ export type WorkflowState = {
   maxStepNum: number;
   maxSearchResults: number;
   autoAcceptedPlan: boolean;
+  enableClarification: boolean;
+  maxClarificationRounds: number;
+  clarificationRounds: number;
+  clarificationContext: string[];
   reportStyle: ChatRequest["report_style"];
   activeSkills: SkillId[];
   skillSelectionReason: string | undefined;

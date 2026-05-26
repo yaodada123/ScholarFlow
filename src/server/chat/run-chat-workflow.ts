@@ -20,6 +20,7 @@ import {
   ensureTopicPlanFields,
   safeParsePlan,
 } from "../workflow.js";
+import type { ReportSource } from "../workflow.js";
 import type { ThreadStore } from "../runtime/thread-store.js";
 import type { WorkflowState } from "../runtime/types.js";
 import type { TraceRecorder } from "../trace/recorder.js";
@@ -201,19 +202,49 @@ function parseCoordinatorDecision(text: string): CoordinatorDecision | null {
   return { action: "direct_response", message };
 }
 
-function extractObservationSources(observations: string[]): Array<{ title: string; uri: string }> {
-  const sources: Array<{ title: string; uri: string }> = [];
+function extractObservationSources(observations: string[]): Array<Omit<ReportSource, "id">> {
+  const sources: Array<Omit<ReportSource, "id">> = [];
   const seen = new Set<string>();
-  const sourcePattern = /^- \[\d+\] (.+?) \((https?:\/\/[^)]+)\)/gm;
+  const sourcePattern = /^- \[\d+\] (.+?) \(([^)]+)\)(?:\n\s{2,}([^\n]+))?/gm;
 
   for (const observation of observations) {
     for (const match of observation.matchAll(sourcePattern)) {
       const title = match[1]?.trim();
       const uri = match[2]?.trim();
+      const excerpt = match[3]?.trim();
       if (!title || !uri || seen.has(uri)) continue;
       seen.add(uri);
-      sources.push({ title, uri });
+      sources.push({
+        title,
+        uri,
+        kind: uri.startsWith("http") ? "academic" : "resource",
+        ...(excerpt ? { excerpt } : {}),
+      });
     }
+  }
+
+  return sources;
+}
+
+function buildReportSources(params: {
+  resources: WorkflowState["resources"];
+  observations: string[];
+}): ReportSource[] {
+  const seen = new Set<string>();
+  const sources: ReportSource[] = [];
+  const addSource = (source: Omit<ReportSource, "id">) => {
+    const uri = source.uri.trim();
+    const title = source.title.trim();
+    if (!uri || !title || seen.has(uri)) return;
+    seen.add(uri);
+    sources.push({ ...source, id: `S${sources.length + 1}` });
+  };
+
+  for (const resource of params.resources) {
+    addSource({ title: resource.title, uri: resource.uri, kind: "resource" });
+  }
+  for (const source of extractObservationSources(params.observations)) {
+    addSource(source);
   }
 
   return sources;
@@ -1270,8 +1301,10 @@ export async function* runChatWorkflow(params: {
       .join("\n");
     const retrievalToolResult = JSON.stringify(
       retrieved.map((r, i) => ({
+        type: "resource",
         id: r.uri,
         title: r.title,
+        url: r.uri,
         content: r.excerpt ?? r.description ?? `Resource ${i + 1}`,
       })),
     );
@@ -1372,10 +1405,10 @@ export async function* runChatWorkflow(params: {
     },
     async () => {
     const reporterId = newMessageId();
-    const sources = [
-      ...s.resources.map((r) => ({ title: r.title, uri: r.uri })),
-      ...extractObservationSources(s.observations),
-    ];
+    const sources = buildReportSources({
+      resources: s.resources,
+      observations: s.observations,
+    });
     const style = s.reportStyle;
     const observations = s.observations;
     const planForReport =

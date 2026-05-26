@@ -49,6 +49,7 @@ import { cn } from "~/lib/utils";
 
 import { AgentTraceBlock } from "./agent-trace-block";
 import { EvaluationDialog } from "./evaluation-dialog";
+import { EvidenceTableBlock } from "./evidence-table-block";
 import { ResearchActivitiesBlock } from "./research-activities-block";
 import { ResearchReportBlock } from "./research-report-block";
 
@@ -767,6 +768,9 @@ ${htmlContent}
               <TabsTrigger className="px-8" value="activities">
                 {t("activities")}
               </TabsTrigger>
+              <TabsTrigger className="px-8" value="evidence">
+                Evidence
+              </TabsTrigger>
               <TabsTrigger className="px-8" value="trace">
                 {t("trace.title")}
               </TabsTrigger>
@@ -806,6 +810,25 @@ ${htmlContent}
             >
               {researchId && (
                 <ResearchActivitiesBlock
+                  className="mt-4"
+                  researchId={researchId}
+                />
+              )}
+            </ScrollContainer>
+          </TabsContent>
+          <TabsContent
+            className="h-full min-h-0 flex-grow px-8"
+            value="evidence"
+            forceMount
+            hidden={activeTab !== "evidence"}
+          >
+            <ScrollContainer
+              className="h-full px-5 pb-20"
+              scrollShadowColor="var(--card)"
+              autoScrollToBottom={false}
+            >
+              {researchId && (
+                <EvidenceTableBlock
                   className="mt-4"
                   researchId={researchId}
                 />

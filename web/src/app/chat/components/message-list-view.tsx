@@ -23,6 +23,7 @@ import {
   type ScrollContainerRef,
 } from "~/components/deer-flow/scroll-container";
 import { Tooltip } from "~/components/deer-flow/tooltip";
+import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import {
   Card,
@@ -452,6 +453,162 @@ function ThoughtBlock({
 }
 
 const GREETINGS = ["Cool", "Sounds great", "Looks good", "Great", "Awesome"];
+
+type TopicCandidate = {
+  title?: string;
+  rationale?: string;
+  researchQuestions?: string[];
+  keywords?: string[];
+  feasibility?: string;
+  novelty?: string;
+  evidencePlan?: string;
+};
+
+type ClarificationPlan = {
+  question?: string;
+  suggestions?: string[];
+};
+
+type ResearchPlanView = {
+  title?: string;
+  thought?: string;
+  topicCandidates?: TopicCandidate[];
+  selectedTopic?: string;
+  clarification?: ClarificationPlan;
+  steps?: { title?: string; description?: string; tools?: string[] }[];
+};
+
+function TopicCandidateCards({
+  candidates,
+  selectedTopic,
+  waitForFeedback,
+  onSelectTopic,
+}: {
+  candidates: TopicCandidate[];
+  selectedTopic?: string;
+  waitForFeedback?: boolean;
+  onSelectTopic?: (candidate: TopicCandidate) => void;
+}) {
+  if (!candidates.length) return null;
+
+  return (
+    <div className="mt-4 grid gap-3 md:grid-cols-2">
+      {candidates.map((candidate, index) => {
+        const title = candidate.title?.trim() || `Topic ${index + 1}`;
+        const selected = selectedTopic?.trim() === title;
+        return (
+          <div
+            key={`${title}-${index}`}
+            className={cn(
+              "rounded-xl border p-4 transition-colors",
+              selected ? "border-primary bg-primary/5" : "bg-muted/20",
+            )}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <h4 className="text-base font-semibold">{title}</h4>
+              {selected && <Badge variant="secondary">Selected</Badge>}
+            </div>
+            {candidate.rationale && (
+              <p className="text-muted-foreground mt-2 text-sm">
+                {candidate.rationale}
+              </p>
+            )}
+            <div className="mt-3 space-y-2 text-sm">
+              {candidate.feasibility && (
+                <div>
+                  <span className="font-medium">Feasibility: </span>
+                  <span className="text-muted-foreground">
+                    {candidate.feasibility}
+                  </span>
+                </div>
+              )}
+              {candidate.novelty && (
+                <div>
+                  <span className="font-medium">Novelty: </span>
+                  <span className="text-muted-foreground">{candidate.novelty}</span>
+                </div>
+              )}
+              {candidate.evidencePlan && (
+                <div>
+                  <span className="font-medium">Evidence: </span>
+                  <span className="text-muted-foreground">
+                    {candidate.evidencePlan}
+                  </span>
+                </div>
+              )}
+            </div>
+            {candidate.researchQuestions?.length ? (
+              <ul className="mt-3 list-disc space-y-1 pl-5 text-sm">
+                {candidate.researchQuestions.slice(0, 3).map((question, i) => (
+                  <li key={i} className="text-muted-foreground">
+                    {question}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            {candidate.keywords?.length ? (
+              <div className="mt-3 flex flex-wrap gap-1">
+                {candidate.keywords.slice(0, 8).map((keyword) => (
+                  <Badge key={keyword} variant="outline" className="text-xs">
+                    {keyword}
+                  </Badge>
+                ))}
+              </div>
+            ) : null}
+            {!selected && onSelectTopic && (
+              <Button
+                className="mt-4"
+                size="sm"
+                variant="outline"
+                disabled={!waitForFeedback}
+                onClick={() => onSelectTopic(candidate)}
+              >
+                Select topic
+              </Button>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ClarificationCard({
+  clarification,
+  waitForFeedback,
+  onAnswer,
+}: {
+  clarification: ClarificationPlan;
+  waitForFeedback?: boolean;
+  onAnswer?: (answer: string) => void;
+}) {
+  return (
+    <div className="rounded-xl border bg-primary/5 p-4">
+      <h4 className="text-base font-semibold">
+        {clarification.question ?? "Please clarify the research scope."}
+      </h4>
+      {clarification.suggestions?.length ? (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {clarification.suggestions.map((suggestion) => (
+            <Button
+              key={suggestion}
+              size="sm"
+              variant="outline"
+              disabled={!waitForFeedback}
+              onClick={() => onAnswer?.(suggestion)}
+            >
+              {suggestion}
+            </Button>
+          ))}
+        </div>
+      ) : null}
+      <p className="text-muted-foreground mt-3 text-sm">
+        You can also type a custom answer below and send it as feedback.
+      </p>
+    </div>
+  );
+}
+
 function PlanCard({
   className,
   message,
@@ -471,11 +628,7 @@ function PlanCard({
   waitForFeedback?: boolean;
 }) {
   const t = useTranslations("chat.research");
-  const plan = useMemo<{
-    title?: string;
-    thought?: string;
-    steps?: { title?: string; description?: string; tools?: string[] }[];
-  }>(() => {
+  const plan = useMemo<ResearchPlanView>(() => {
     return parseJSON(message.content ?? "", {});
   }, [message.content]);
 
@@ -499,6 +652,24 @@ function PlanCard({
       );
     }
   }, [onSendMessage]);
+  const handleSelectTopic = useCallback(
+    (candidate: TopicCandidate) => {
+      const title = candidate.title?.trim();
+      if (!title || !onSendMessage) return;
+      onSendMessage(
+        `Please set selectedTopic to "${title}" and revise the research plan steps around this topic.`,
+        { interruptFeedback: "edit_plan" },
+      );
+    },
+    [onSendMessage],
+  );
+  const handleClarificationAnswer = useCallback(
+    (answer: string) => {
+      if (!onSendMessage) return;
+      onSendMessage(answer, { interruptFeedback: "edit_plan" });
+    },
+    [onSendMessage],
+  );
   return (
     <div className={cn("w-full", className)}>
       {reasoningContent && (
@@ -532,8 +703,23 @@ function PlanCard({
                 <Markdown className="opacity-80" animated={false}>
                   {plan.thought}
                 </Markdown>
-                {plan.steps && (
-                  <ul className="my-2 flex list-decimal flex-col gap-4 border-l-[2px] pl-8">
+                {plan.clarification ? (
+                  <ClarificationCard
+                    clarification={plan.clarification}
+                    waitForFeedback={waitForFeedback}
+                    onAnswer={handleClarificationAnswer}
+                  />
+                ) : null}
+                {plan.topicCandidates?.length ? (
+                  <TopicCandidateCards
+                    candidates={plan.topicCandidates}
+                    selectedTopic={plan.selectedTopic}
+                    waitForFeedback={waitForFeedback}
+                    onSelectTopic={handleSelectTopic}
+                  />
+                ) : null}
+                {plan.steps && plan.steps.length > 0 && (
+                  <ul className="my-4 flex list-decimal flex-col gap-4 border-l-[2px] pl-8">
                     {plan.steps.map((step, i) => (
                       <li key={`step-${i}`} style={{ wordBreak: 'break-all', whiteSpace: 'normal' }}>
                         <div className="flex items-start gap-2">
