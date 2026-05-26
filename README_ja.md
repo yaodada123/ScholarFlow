@@ -6,12 +6,6 @@
 
 - 原版（クレジット）：https://github.com/bytedance/deer-flow
 
-## デモ
-
-### ビデオ
-
-<https://github.com/user-attachments/assets/ca57489b-4022-434e-98b0-ac593f1b55f8>
-
 ## 現状（機能概要）
 
 - サーバー & プロトコル

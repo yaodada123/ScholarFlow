@@ -6,12 +6,6 @@
 
 It helps users turn a broad interest area into concrete research topic directions, retrieve academic evidence from local materials, arXiv, OpenAlex, and optional web sources, then generate, evaluate, and edit grounded Markdown research reports. The project focuses on a controllable, observable, evidence-aware workflow for topic discovery and literature investigation rather than a generic one-shot chatbot.
 
-## Demo
-
-### Video
-
-<https://github.com/user-attachments/assets/ca57489b-4022-434e-98b0-ac593f1b55f8>
-
 ## Current Status (Capabilities)
 
 - Topic-direction research workflow

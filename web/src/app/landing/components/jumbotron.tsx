@@ -53,7 +53,7 @@ export function Jumbotron() {
               }
               href={
                 env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY
-                  ? "https://github.com/yaodada123/deer-flow-ts"
+                  ? "https://github.com/yaodada123/ScholarFlow"
                   : "/chat"
               }
             >
@@ -68,7 +68,7 @@ export function Jumbotron() {
               asChild
             >
               <Link
-                href="https://github.com/yaodada123/deer-flow-ts"
+                href="https://github.com/yaodada123/ScholarFlow"
                 target="_blank"
               >
                 <GithubFilled />

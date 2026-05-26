@@ -6,12 +6,6 @@
 
 - Оригинальный проект (благодарности): https://github.com/bytedance/deer-flow
 
-## Демонстрация
-
-### Видео
-
-<https://github.com/user-attachments/assets/ca57489b-4022-434e-98b0-ac593f1b55f8>
-
 ## Текущее состояние (возможности)
 
 - Сервер и протокол

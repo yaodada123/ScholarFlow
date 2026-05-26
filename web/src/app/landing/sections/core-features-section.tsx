@@ -27,27 +27,27 @@ type FeatureIcon = {
 const featureIcons: Array<FeatureIcon> = [
   {
     Icon: GraduationCap,
-    href: "https://github.com/yaodada123/deer-flow-ts/blob/main/src/server/workflow.ts",
+    href: "https://github.com/yaodada123/ScholarFlow/blob/main/src/server/workflow.ts",
     className: "lg:col-start-1 lg:col-end-2 lg:row-start-1 lg:row-end-3",
   },
   {
     Icon: Microscope,
-    href: "https://github.com/yaodada123/deer-flow-ts/tree/main/src/server/tools",
+    href: "https://github.com/yaodada123/ScholarFlow/tree/main/src/server/tools",
     className: "lg:col-start-1 lg:col-end-2 lg:row-start-3 lg:row-end-4",
   },
   {
     Icon: Route,
-    href: "https://github.com/yaodada123/deer-flow-ts/blob/main/src/server/chat/run-chat-workflow.ts",
+    href: "https://github.com/yaodada123/ScholarFlow/blob/main/src/server/chat/run-chat-workflow.ts",
     className: "lg:col-start-2 lg:col-end-3 lg:row-start-1 lg:row-end-2",
   },
   {
     Icon: BookOpenCheck,
-    href: "https://github.com/yaodada123/deer-flow-ts/tree/main/src/server/evaluation",
+    href: "https://github.com/yaodada123/ScholarFlow/tree/main/src/server/evaluation",
     className: "lg:col-start-2 lg:col-end-3 lg:row-start-2 lg:row-end-3",
   },
   {
     Icon: FilePenLine,
-    href: "https://github.com/yaodada123/deer-flow-ts/blob/main/src/server/app.ts",
+    href: "https://github.com/yaodada123/ScholarFlow/blob/main/src/server/app.ts",
     className: "lg:col-start-2 lg:col-end-3 lg:row-start-3 lg:row-end-4",
   },
 ];

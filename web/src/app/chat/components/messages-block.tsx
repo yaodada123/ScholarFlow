@@ -199,7 +199,7 @@ export function MessagesBlock({ className }: { className?: string }) {
                 {t("demoNotice")}{" "}
                 <a
                   className="underline"
-                  href="https://github.com/yaodada123/deer-flow-ts"
+                  href="https://github.com/yaodada123/ScholarFlow"
                   target="_blank"
                   rel="noopener noreferrer"
                 >

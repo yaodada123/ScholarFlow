@@ -36,7 +36,7 @@ export default function HomePage() {
           <Tooltip title={t("starOnGitHub")}>
             <Button variant="ghost" size="icon" asChild>
               <Link
-                href="https://github.com/yaodada123/deer-flow-ts"
+                href="https://github.com/yaodada123/ScholarFlow"
                 target="_blank"
               >
                 <GithubOutlined />

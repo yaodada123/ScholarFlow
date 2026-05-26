@@ -6,12 +6,6 @@ Este repositório é uma **reimplementação não oficial em TypeScript** do **D
 
 - Projeto original (créditos): https://github.com/bytedance/deer-flow
 
-## Demonstração
-
-### Vídeo
-
-<https://github.com/user-attachments/assets/ca57489b-4022-434e-98b0-ac593f1b55f8>
-
 ## Estado atual (capacidades)
 
 - Servidor e protocolo

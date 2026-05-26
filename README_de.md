@@ -6,12 +6,6 @@ Dieses Repository ist eine **inoffizielle TypeScript-Neuimplementierung** des ur
 
 - Originalprojekt (Credits): https://github.com/bytedance/deer-flow
 
-## Demo
-
-### Video
-
-<https://github.com/user-attachments/assets/ca57489b-4022-434e-98b0-ac593f1b55f8>
-
 ## Aktueller Stand (Fähigkeiten)
 
 - Server & Protokoll

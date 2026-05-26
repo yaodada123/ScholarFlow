@@ -48,4 +48,5 @@ yarn-error.log*
 .idea
 .ttadk/
 .vscode/
+.codex/
 data/replays/

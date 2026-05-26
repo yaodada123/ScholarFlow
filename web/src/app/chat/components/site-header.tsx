@@ -36,7 +36,7 @@ export function SiteHeader() {
             className="group relative z-10"
           >
             <Link
-              href="https://github.com/yaodada123/deer-flow-ts"
+              href="https://github.com/yaodada123/ScholarFlow"
               target="_blank"
             >
               <GitHubLogoIcon className="size-4" />
