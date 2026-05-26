@@ -17,7 +17,6 @@ import {
   Check,
   Copy,
   GraduationCap,
-  Headphones,
   Pencil,
   Undo2,
   X,
@@ -44,7 +43,7 @@ import {
 } from "~/components/ui/dropdown-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { useReplay } from "~/core/replay";
-import { closeResearch, getResearchQuery, listenToPodcast, useStore, useSettingsStore } from "~/core/store";
+import { closeResearch, getResearchQuery, useStore, useSettingsStore } from "~/core/store";
 import { cn } from "~/lib/utils";
 
 import { AgentTraceBlock } from "./agent-trace-block";
@@ -78,13 +77,6 @@ export function ResearchBlock({
       setActiveTab("report");
     }
   }, [hasReport]);
-
-  const handleGeneratePodcast = useCallback(async () => {
-    if (!researchId) {
-      return;
-    }
-    await listenToPodcast(researchId);
-  }, [researchId]);
 
   const [editing, setEditing] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
@@ -650,17 +642,6 @@ ${htmlContent}
         <div className="absolute right-4 flex h-9 items-center justify-center">
           {hasReport && !reportStreaming && (
             <>
-              <Tooltip title={t("generatePodcast")}>
-                <Button
-                  className="text-gray-400"
-                  size="icon"
-                  variant="ghost"
-                  disabled={isReplay}
-                  onClick={handleGeneratePodcast}
-                >
-                  <Headphones />
-                </Button>
-              </Tooltip>
               <Tooltip title={t("edit")}>
                 <Button
                   className="text-gray-400"

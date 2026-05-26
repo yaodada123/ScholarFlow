@@ -428,11 +428,6 @@ app.get("/api/uploads/:filename", async (request: FastifyRequest, reply: Fastify
   }
 });
 
-app.post("/api/podcast/generate", async (_request: FastifyRequest, reply: FastifyReply) => {
-  reply.code(501).send(toDetailError("Podcast generation requires a configured TTS provider and is not enabled in this backend."));
-  return reply;
-});
-
 app.post("/api/mcp/server/metadata", async (request: FastifyRequest, reply: FastifyReply) => {
   if (!env.ENABLE_MCP_SERVER_CONFIGURATION) {
     reply

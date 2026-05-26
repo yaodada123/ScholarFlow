@@ -88,7 +88,7 @@ describe('MessageListView - Issue #588: React Key Warnings Fix', () => {
     it('should filter out non-renderable messages from key list', () => {
       // Simulate the filter logic for renderable messages
       type MessageType = 'user' | 'assistant';
-      type Agent = 'coordinator' | 'planner' | 'researcher' | 'coder' | 'reporter' | 'podcast';
+      type Agent = 'coordinator' | 'planner' | 'researcher' | 'coder' | 'reporter';
 
       interface MockMessage {
         id: string;
@@ -114,7 +114,6 @@ describe('MessageListView - Issue #588: React Key Warnings Fix', () => {
             msg.role === 'user' ||
             msg.agent === 'coordinator' ||
             msg.agent === 'planner' ||
-            msg.agent === 'podcast' ||
             researchIds.has(msg.id) // Only startOfResearch messages
           );
         })
@@ -241,7 +240,7 @@ describe('MessageListView - Issue #588: React Key Warnings Fix', () => {
   describe('Renderable Message Filtering', () => {
     it('should maintain correct message order after filtering', () => {
       type MessageType = 'user' | 'assistant';
-      type Agent = 'coordinator' | 'planner' | 'researcher' | 'coder' | 'podcast';
+      type Agent = 'coordinator' | 'planner' | 'researcher' | 'coder';
 
       interface MockMessage {
         id: string;
@@ -255,7 +254,6 @@ describe('MessageListView - Issue #588: React Key Warnings Fix', () => {
         'msg-coordinator',
         'msg-researcher-1', // Non-start, should be filtered
         'msg-planner',
-        'msg-podcast',
       ];
 
       const messages = new Map<string, MockMessage>([
@@ -264,7 +262,6 @@ describe('MessageListView - Issue #588: React Key Warnings Fix', () => {
         ['msg-coordinator', { id: 'msg-coordinator', role: 'assistant', agent: 'coordinator' }],
         ['msg-researcher-1', { id: 'msg-researcher-1', role: 'assistant', agent: 'researcher' }],
         ['msg-planner', { id: 'msg-planner', role: 'assistant', agent: 'planner' }],
-        ['msg-podcast', { id: 'msg-podcast', role: 'assistant', agent: 'podcast' }],
       ]);
 
       const researchIds = new Set<string>();
@@ -277,7 +274,6 @@ describe('MessageListView - Issue #588: React Key Warnings Fix', () => {
             msg.role === 'user' ||
             msg.agent === 'coordinator' ||
             msg.agent === 'planner' ||
-            msg.agent === 'podcast' ||
             researchIds.has(id)
           );
         });
@@ -290,7 +286,6 @@ describe('MessageListView - Issue #588: React Key Warnings Fix', () => {
         'msg-user-1',
         'msg-coordinator',
         'msg-planner',
-        'msg-podcast',
       ]);
 
       // No duplicates
@@ -299,7 +294,7 @@ describe('MessageListView - Issue #588: React Key Warnings Fix', () => {
 
     it('should update renderable list when research starts', () => {
       type MessageType = 'user' | 'assistant';
-      type Agent = 'researcher' | 'coordinator' | 'planner' | 'podcast';
+      type Agent = 'researcher' | 'coordinator' | 'planner';
 
       interface MockMessage {
         id: string;
@@ -329,7 +324,6 @@ describe('MessageListView - Issue #588: React Key Warnings Fix', () => {
             msg.role === 'user' ||
             msg.agent === 'coordinator' ||
             msg.agent === 'planner' ||
-            msg.agent === 'podcast' ||
             researchIds.has(id)
           );
         });
@@ -376,7 +370,7 @@ describe('MessageListView - Issue #588: React Key Warnings Fix', () => {
     it('should pass React key validation with filtered renderable messages', () => {
       // Simulate React key validation on renderable message IDs
       type MessageType = 'user' | 'assistant';
-      type Agent = 'coordinator' | 'planner' | 'podcast' | 'coder';
+      type Agent = 'coordinator' | 'planner' | 'coder';
 
       interface MockMessage {
         id: string;
@@ -389,7 +383,6 @@ describe('MessageListView - Issue #588: React Key Warnings Fix', () => {
         { id: 'msg-coder-1', role: 'assistant', agent: 'coder' }, // Not renderable
         { id: 'msg-coordinator', role: 'assistant', agent: 'coordinator' },
         { id: 'msg-planner', role: 'assistant', agent: 'planner' },
-        { id: 'msg-podcast', role: 'assistant', agent: 'podcast' },
         { id: 'msg-coder-1', role: 'assistant', agent: 'coder' }, // Duplicate attempt
       ];
 
@@ -401,7 +394,6 @@ describe('MessageListView - Issue #588: React Key Warnings Fix', () => {
           msg.role === 'user' ||
           msg.agent === 'coordinator' ||
           msg.agent === 'planner' ||
-          msg.agent === 'podcast' ||
           researchIds.has(msg.id)
         );
       });

@@ -1,5 +1,6 @@
 import { ExternalLink } from "lucide-react";
 import { useMemo } from "react";
+import { useShallow } from "zustand/react/shallow";
 
 import { Badge } from "~/components/ui/badge";
 import { Card } from "~/components/ui/card";
@@ -7,6 +8,8 @@ import type { ToolCallRuntime } from "~/core/messages";
 import { useStore } from "~/core/store";
 import { parseJSON } from "~/core/utils";
 import { cn } from "~/lib/utils";
+
+const EMPTY_TOOL_CALLS: ToolCallRuntime[] = [];
 
 type EvidenceRow = {
   id: string;
@@ -79,9 +82,15 @@ export function EvidenceTableBlock({
   className?: string;
   researchId: string;
 }) {
-  const activityIds = useStore((state) => state.researchActivityIds.get(researchId) ?? []);
-  const toolCalls = useStore((state) =>
-    activityIds.flatMap((activityId) => state.messages.get(activityId)?.toolCalls ?? []),
+  const toolCalls = useStore(
+    useShallow((state) => {
+      const activityIds = state.researchActivityIds.get(researchId);
+      if (!activityIds?.length) return EMPTY_TOOL_CALLS;
+
+      return activityIds.flatMap(
+        (activityId) => state.messages.get(activityId)?.toolCalls ?? [],
+      );
+    }),
   );
   const rows = useMemo(() => extractEvidenceRows(toolCalls), [toolCalls]);
 

@@ -33,9 +33,8 @@
   - Fastify + TypeScript（ESM）
   - SSE 流式接口：`POST /api/chat/stream`
   - 配置接口：`GET /api/config`（返回 models 与 rag.provider）
-- MCP 与 Podcast
+- MCP
   - MCP metadata 接口已用于设置页联调，但完整工具发现/执行尚未启用
-  - Podcast/TTS 接口会返回明确的未启用响应，待配置 TTS provider 后扩展
 
 > 说明：当前版本优先跑通“课题方向生成、证据检索、综合成文、质量评估、编辑优化”的学术调研闭环。更强的引用溯源、PDF 解析、向量 RAG 和完整 MCP 工具执行属于后续增强方向。
 
@@ -126,7 +125,6 @@ npm run dev:web
 - 更多学术搜索集成：Semantic Scholar、CrossRef、BibTeX 工作流
 - 更强的评估体系：计划质量、证据覆盖、引用准确性和幻觉风险评估
 - 完整 MCP 工具发现、安全执行与 workflow 集成
-- 可选 TTS provider 集成，用于播客/音频报告生成
 
 ## 致谢
 

@@ -33,9 +33,8 @@ It helps users turn a broad interest area into concrete research topic direction
   - Fastify + TypeScript (ESM)
   - SSE streaming endpoint: `POST /api/chat/stream`
   - Config endpoint: `GET /api/config` (returns models and `rag.provider`)
-- MCP and Podcast
+- MCP
   - MCP metadata endpoint exists for settings integration, but full tool discovery/execution is not enabled yet
-  - Podcast/TTS endpoint returns a clear unsupported response until a TTS provider is configured
 
 > Note: the current version prioritizes an end-to-end topic discovery and academic report loop: propose directions, retrieve evidence, synthesize findings, evaluate quality, and edit the report. Advanced citation grounding, PDF ingestion, vector RAG, and full MCP tool execution remain planned improvements.
 
@@ -126,7 +125,6 @@ npm run dev:web
 - More academic search integrations: Semantic Scholar, CrossRef, and BibTeX workflows
 - Stronger evaluation suite for plan quality, evidence coverage, citation accuracy, and hallucination risk
 - Full MCP tool discovery, safe execution, and workflow integration
-- Optional TTS provider integration for podcast/audio report generation
 
 ## Acknowledgments
 

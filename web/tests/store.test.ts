@@ -44,7 +44,6 @@ function filterRenderableMessageIds(
       message.role === 'user' ||
       message.agent === 'coordinator' ||
       message.agent === 'planner' ||
-      message.agent === 'podcast' ||
       researchIds.includes(messageId)
     );
   });
@@ -148,23 +147,6 @@ describe('Issue #588: Message ID Management and Filtering', () => {
       expect(renderable).toContain('msg-1');
     });
 
-    it('should include podcast messages', () => {
-      const messageIds = ['msg-1'];
-      const messages = new Map<string, Message>([
-        ['msg-1', {
-          id: 'msg-1',
-          role: 'assistant',
-          agent: 'podcast',
-          content: 'Podcast',
-          contentChunks: ['Podcast'],
-        } as Message],
-      ]);
-      const researchIds: string[] = [];
-      
-      const renderable = filterRenderableMessageIds(messageIds, messages, researchIds);
-      
-      expect(renderable).toContain('msg-1');
-    });
 
     it('should include research messages when in researchIds', () => {
       const messageIds = ['msg-1'];
