@@ -21,6 +21,8 @@ import { buildLocalResource, extractTextFromRagFile, isAllowedRagFilename, RagTe
 import { indexLocalResource } from "./rag/lancedb-store.js";
 import { listReplayRuns, listAllReplayRuns, readLatestReplayRun, readReplayRun, ReplayRecorder } from "./replay/recorder.js";
 import { listTraceRuns, readLatestTraceRun, readTraceRun, TraceRecorder } from "./trace/recorder.js";
+import { addKnowledgeSource, createProject, getProject, KnowledgeConflictError, KnowledgeNotFoundError, listKnowledgeSources, listProjects, } from "./knowledge/store.js";
+import { AddKnowledgeSourceSchema, CreateProjectSchema } from "./knowledge/types.js";
 const EnvSchema = z.object({
     PORT: z.coerce.number().int().positive().default(8899),
     ALLOWED_ORIGINS: z
@@ -150,6 +152,9 @@ const ProseGenerateRequestSchema = z.object({
     option: z.string().optional(),
     command: z.string().optional(),
 });
+const ProjectParamsSchema = z.object({
+    projectId: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,119}$/),
+});
 function stripThinkTags(text) {
     return text.replaceAll("<think>", "").replaceAll("</think>", "");
 }
@@ -252,6 +257,13 @@ app.get("/api/config", async () => {
     const provider = (process.env.RAG_PROVIDER ?? "").trim() || "local";
     return {
         rag: { provider },
+        skills: allSkills.map((skill) => ({
+            id: skill.id,
+            name: skill.name,
+            description: skill.description,
+            required_sections: skill.requiredSections,
+            figure_suggestions: skill.figureSuggestions,
+        })),
         models: {
             basic: models.basic ?? [],
             reasoning: models.reasoning ?? [],
@@ -259,6 +271,82 @@ app.get("/api/config", async () => {
             ...(models.code ? { code: models.code } : {}),
         },
     };
+});
+app.get("/api/projects", async () => ({
+    projects: await listProjects(),
+}));
+app.post("/api/projects", async (request, reply) => {
+    try {
+        const parsed = CreateProjectSchema.parse(request.body ?? {});
+        const project = await createProject(parsed);
+        reply.code(201).send({ project });
+        return reply;
+    }
+    catch (e) {
+        if (e instanceof KnowledgeConflictError) {
+            reply.code(409).send(toDetailError(e.message));
+            return reply;
+        }
+        const message = e instanceof Error ? e.message : "Invalid project request";
+        reply.code(400).send(toDetailError(message));
+        return reply;
+    }
+});
+app.get("/api/projects/:projectId", async (request, reply) => {
+    try {
+        const params = ProjectParamsSchema.parse(request.params ?? {});
+        const project = await getProject(params.projectId);
+        reply.send({ project });
+        return reply;
+    }
+    catch (e) {
+        if (e instanceof KnowledgeNotFoundError) {
+            reply.code(404).send(toDetailError(e.message));
+            return reply;
+        }
+        const message = e instanceof Error ? e.message : "Invalid project id";
+        reply.code(400).send(toDetailError(message));
+        return reply;
+    }
+});
+app.get("/api/projects/:projectId/sources", async (request, reply) => {
+    try {
+        const params = ProjectParamsSchema.parse(request.params ?? {});
+        const sources = await listKnowledgeSources(params.projectId);
+        reply.send({ sources });
+        return reply;
+    }
+    catch (e) {
+        if (e instanceof KnowledgeNotFoundError) {
+            reply.code(404).send(toDetailError(e.message));
+            return reply;
+        }
+        const message = e instanceof Error ? e.message : "Invalid project id";
+        reply.code(400).send(toDetailError(message));
+        return reply;
+    }
+});
+app.post("/api/projects/:projectId/sources", async (request, reply) => {
+    try {
+        const params = ProjectParamsSchema.parse(request.params ?? {});
+        const parsed = AddKnowledgeSourceSchema.parse(request.body ?? {});
+        const source = await addKnowledgeSource(params.projectId, parsed);
+        reply.code(201).send({ source });
+        return reply;
+    }
+    catch (e) {
+        if (e instanceof KnowledgeNotFoundError) {
+            reply.code(404).send(toDetailError(e.message));
+            return reply;
+        }
+        if (e instanceof KnowledgeConflictError) {
+            reply.code(409).send(toDetailError(e.message));
+            return reply;
+        }
+        const message = e instanceof Error ? e.message : "Invalid knowledge source request";
+        reply.code(400).send(toDetailError(message));
+        return reply;
+    }
 });
 app.post("/api/prompt/enhance", async (request, reply) => {
     try {
@@ -393,10 +481,6 @@ app.get("/api/uploads/:filename", async (request, reply) => {
         reply.code(404).send(toDetailError("File not found"));
         return reply;
     }
-});
-app.post("/api/podcast/generate", async (_request, reply) => {
-    reply.code(501).send(toDetailError("Podcast generation requires a configured TTS provider and is not enabled in this backend."));
-    return reply;
 });
 app.post("/api/mcp/server/metadata", async (request, reply) => {
     if (!env.ENABLE_MCP_SERVER_CONFIGURATION) {

@@ -7,7 +7,12 @@ import type { MCPServerMetadata, SimpleMCPServerMetadata } from "../mcp";
 
 const SETTINGS_KEY = "deerflow.settings";
 
-export type AcademicSkillId = "systematic-literature-review" | "academic-paper-review" | "deep-research";
+export type AcademicSkillId =
+  | "systematic-literature-review"
+  | "academic-paper-review"
+  | "deep-research"
+  | "research-report"
+  | "proposal-report";
 
 const DEFAULT_SETTINGS: SettingsState = {
   general: {
@@ -22,6 +27,7 @@ const DEFAULT_SETTINGS: SettingsState = {
     maxStepNum: 3,
     maxSearchResults: 3,
     reportStyle: "academic",
+    projectId: "",
   },
   mcp: {
     servers: [],
@@ -45,6 +51,7 @@ export type SettingsState = {
     maxStepNum: number;
     maxSearchResults: number;
     reportStyle: "academic" | "popular_science" | "news" | "social_media" | "strategic_investment";
+    projectId: string;
   };
   mcp: {
     servers: MCPServerMetadata[];

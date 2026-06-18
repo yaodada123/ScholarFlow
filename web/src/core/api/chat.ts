@@ -43,6 +43,7 @@ export async function* chatStream(
   userMessage: string,
   params: {
     thread_id: string;
+    project_id?: string;
     resources?: Array<Resource>;
     workflow_mode?: "chat" | "research";
     auto_accepted_plan: boolean;

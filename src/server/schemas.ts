@@ -8,7 +8,13 @@ export const ResourceSchema = z.object({
 
 export type Resource = z.infer<typeof ResourceSchema>;
 
-export const SkillIdSchema = z.enum(["systematic-literature-review", "academic-paper-review", "deep-research"]);
+export const SkillIdSchema = z.enum([
+  "systematic-literature-review",
+  "academic-paper-review",
+  "deep-research",
+  "research-report",
+  "proposal-report",
+]);
 
 export type SkillId = z.infer<typeof SkillIdSchema>;
 
@@ -26,6 +32,7 @@ export const ChatMessageSchema = z.object({
 export const ChatRequestSchema = z.object({
   messages: z.array(ChatMessageSchema).optional().default([]),
   resources: z.array(ResourceSchema).optional().default([]),
+  project_id: z.string().min(1).max(120).optional(),
   debug: z.boolean().optional().default(false),
   thread_id: z.string().optional().default("__default__"),
   locale: z.string().optional().default("en-US"),

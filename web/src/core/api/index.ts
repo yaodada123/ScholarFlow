@@ -7,3 +7,4 @@ export * from "./mcp";
 export * from "./prompt-enhancer";
 export * from "./trace";
 export * from "./types";
+export * from "./projects";

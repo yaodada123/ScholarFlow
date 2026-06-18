@@ -41,7 +41,19 @@ const ACADEMIC_SKILLS: Array<{ id: AcademicSkillId; label: string; description: 
     label: "Deep Research",
     description: "多角度调研、对比、解释和证据综合。",
   },
+  {
+    id: "research-report",
+    label: "Research Report",
+    description: "完整学术/科研报告，包含研究问题、证据、分析、局限和参考文献。",
+  },
+  {
+    id: "proposal-report",
+    label: "Proposal Report",
+    description: "开题报告、研究计划和课题申请，强调问题、方法、可行性和预期贡献。",
+  },
 ];
+
+const academicSkillIds = ACADEMIC_SKILLS.map((skill) => skill.id) as [AcademicSkillId, ...AcademicSkillId[]];
 
 const generalFormSchema = z.object({
   autoAcceptedPlan: z.boolean(),
@@ -64,8 +76,9 @@ const generalFormSchema = z.object({
   enableDeepThinking: z.boolean(),
   enableWebSearch: z.boolean(),
   reportStyle: z.enum(["academic", "popular_science", "news", "social_media","strategic_investment"]),
+  projectId: z.string().max(120),
   enableSkills: z.boolean(),
-  selectedSkills: z.array(z.enum(["systematic-literature-review", "academic-paper-review", "deep-research"])),
+  selectedSkills: z.array(z.enum(academicSkillIds)),
 });
 
 export const GeneralTab: Tab = ({
@@ -244,6 +257,22 @@ export const GeneralTab: Tab = ({
                 )}
               />
             )}
+            <FormField
+              control={form.control}
+              name="projectId"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Project knowledge base</FormLabel>
+                  <FormDescription>
+                    Optional project ID. Matching sources from this project are injected into research-mode evidence retrieval.
+                  </FormDescription>
+                  <FormControl>
+                    <Input placeholder="e.g. thesis-literature-review" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
             {form.watch("enableClarification") && (
               <FormField
                 control={form.control}

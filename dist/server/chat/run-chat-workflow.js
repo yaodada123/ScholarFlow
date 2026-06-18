@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
 import { loadLlmConfig } from "../llm/env-models.js";
 import { OpenAICompatibleClient } from "../llm/openai-compatible.js";
+import { knowledgeSourceToResource, listKnowledgeSources } from "../knowledge/store.js";
 import { formatSkillPromptBlock } from "../skills/prompt.js";
 import { getSkills } from "../skills/registry.js";
 import { selectSkills } from "../skills/selector.js";
@@ -79,6 +80,26 @@ function resolveActiveSkills(params) {
         reason: selected.reason,
     };
 }
+async function resolveRequestResources(request) {
+    const resources = [...request.resources];
+    if (!request.project_id)
+        return resources;
+    try {
+        const projectSources = await listKnowledgeSources(request.project_id);
+        const seen = new Set(resources.map((resource) => resource.uri));
+        for (const source of projectSources) {
+            const resource = knowledgeSourceToResource(source);
+            if (seen.has(resource.uri))
+                continue;
+            seen.add(resource.uri);
+            resources.push(resource);
+        }
+    }
+    catch (error) {
+        console.warn(`[knowledge] Failed to load project sources for ${request.project_id}`, error);
+    }
+    return resources;
+}
 function hasSkill(state, skillId) {
     return state.activeSkills.includes(skillId);
 }
@@ -152,16 +173,41 @@ function parseCoordinatorDecision(text) {
 function extractObservationSources(observations) {
     const sources = [];
     const seen = new Set();
-    const sourcePattern = /^- \[\d+\] (.+?) \((https?:\/\/[^)]+)\)/gm;
+    const sourcePattern = /^- \[\d+\] (.+?) \(([^)]+)\)(?:\n\s{2,}([^\n]+))?/gm;
     for (const observation of observations) {
         for (const match of observation.matchAll(sourcePattern)) {
             const title = match[1]?.trim();
             const uri = match[2]?.trim();
+            const excerpt = match[3]?.trim();
             if (!title || !uri || seen.has(uri))
                 continue;
             seen.add(uri);
-            sources.push({ title, uri });
+            sources.push({
+                title,
+                uri,
+                kind: uri.startsWith("http") ? "academic" : "resource",
+                ...(excerpt ? { excerpt } : {}),
+            });
         }
+    }
+    return sources;
+}
+function buildReportSources(params) {
+    const seen = new Set();
+    const sources = [];
+    const addSource = (source) => {
+        const uri = source.uri.trim();
+        const title = source.title.trim();
+        if (!uri || !title || seen.has(uri))
+            return;
+        seen.add(uri);
+        sources.push({ ...source, id: `S${sources.length + 1}` });
+    };
+    for (const resource of params.resources) {
+        addSource({ title: resource.title, uri: resource.uri, kind: "resource" });
+    }
+    for (const source of extractObservationSources(params.observations)) {
+        addSource(source);
     }
     return sources;
 }
@@ -205,6 +251,7 @@ function makeBaseState(params) {
     const { request, threadId, query, activeSkills, skillSelectionReason } = params;
     return {
         threadId,
+        ...(request.project_id ? { projectId: request.project_id } : {}),
         locale: request.locale,
         researchTopic: query,
         messages: [{ role: "user", content: query }],
@@ -219,6 +266,10 @@ function makeBaseState(params) {
         maxStepNum: request.max_step_num,
         maxSearchResults: request.max_search_results,
         autoAcceptedPlan: request.auto_accepted_plan,
+        enableClarification: request.enable_clarification ?? false,
+        maxClarificationRounds: request.max_clarification_rounds ?? 3,
+        clarificationRounds: 0,
+        clarificationContext: [],
         reportStyle: request.report_style,
         activeSkills,
         skillSelectionReason,
@@ -385,6 +436,7 @@ function upsertThreadState(params) {
     }
     const merged = {
         ...existing,
+        ...(params.request.project_id ? { projectId: params.request.project_id } : {}),
         locale: params.request.locale,
         enableBackgroundInvestigation: params.request.enable_background_investigation,
         enableWebSearch: params.request.enable_web_search,
@@ -419,10 +471,13 @@ export async function* runChatWorkflow(params) {
     const isFeedback = request.interrupt_feedback === "accepted" || request.interrupt_feedback === "edit_plan";
     const existing = store.get(request.thread_id);
     const query = isFeedback ? (existing?.researchTopic ?? incomingText) : incomingText;
-    const skillSelection = resolveActiveSkills({ request, query, existing, isFeedback });
+    const resolvedResources = await resolveRequestResources(request);
+    const requestWithKnowledge = { ...request, resources: resolvedResources };
+    const skillSelection = resolveActiveSkills({ request: requestWithKnowledge, query, existing, isFeedback });
     trace?.runStarted({
         query: incomingText,
-        resources: request.resources.length,
+        resources: resolvedResources.length,
+        project_id: request.project_id,
         enable_web_search: request.enable_web_search,
         enable_background_investigation: request.enable_background_investigation,
         interrupt_feedback: request.interrupt_feedback,
@@ -432,7 +487,7 @@ export async function* runChatWorkflow(params) {
     });
     let state = upsertThreadState({
         store,
-        request,
+        request: requestWithKnowledge,
         query,
         isFeedback,
         activeSkills: skillSelection.activeSkills,
@@ -443,7 +498,7 @@ export async function* runChatWorkflow(params) {
     try {
         if (request.workflow_mode === "chat" && !isFeedback) {
             for await (const event of runPlainChatResponse({
-                request,
+                request: requestWithKnowledge,
                 llm,
                 incomingText,
                 ...(signal ? { signal } : {}),
@@ -470,6 +525,10 @@ export async function* runChatWorkflow(params) {
             maxStepNum: Annotation(),
             maxSearchResults: Annotation(),
             autoAcceptedPlan: Annotation(),
+            enableClarification: Annotation(),
+            maxClarificationRounds: Annotation(),
+            clarificationRounds: Annotation(),
+            clarificationContext: Annotation(),
             reportStyle: Annotation(),
             activeSkills: Annotation(),
             skillSelectionReason: Annotation(),
@@ -1096,8 +1155,10 @@ export async function* runChatWorkflow(params) {
             })
                 .join("\n");
             const retrievalToolResult = JSON.stringify(retrieved.map((r, i) => ({
+                type: "resource",
                 id: r.uri,
                 title: r.title,
+                url: r.uri,
                 content: r.excerpt ?? r.description ?? `Resource ${i + 1}`,
             })));
             emit(config, {
@@ -1187,10 +1248,10 @@ export async function* runChatWorkflow(params) {
             },
         }, async () => {
             const reporterId = newMessageId();
-            const sources = [
-                ...s.resources.map((r) => ({ title: r.title, uri: r.uri })),
-                ...extractObservationSources(s.observations),
-            ];
+            const sources = buildReportSources({
+                resources: s.resources,
+                observations: s.observations,
+            });
             const style = s.reportStyle;
             const observations = s.observations;
             const planForReport = s.currentPlan ??

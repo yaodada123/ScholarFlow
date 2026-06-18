@@ -9,7 +9,6 @@ import { useShallow } from "zustand/react/shallow";
 import { chatStream } from "../api";
 import type { Message, Resource } from "../messages";
 import { mergeMessage } from "../messages";
-import { parseJSON } from "../utils";
 
 import { getChatStreamSettings } from "./settings-store";
 
@@ -124,6 +123,7 @@ export async function sendMessage(
     content ?? "[REPLAY]",
     {
       thread_id: THREAD_ID,
+      project_id: settings.projectId || undefined,
       interrupt_feedback: interruptFeedback,
       resources,
       workflow_mode: settings.workflowMode ?? "chat",

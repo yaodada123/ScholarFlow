@@ -22,6 +22,18 @@ const deepResearchPatterns = [
     /\bhow\s+(does|do|can|to)\b/i,
     /调研|研究一下|研究|对比|比较|解释|分析|了解/,
 ];
+const researchReportPatterns = [
+    /\b(research|academic)\s+report\b/i,
+    /\b(write|draft|generate|create)\s+(a\s+)?(full\s+)?report\b/i,
+    /\bfull\s+(research|academic)\s+report\b/i,
+    /研究报告|调研报告|学术报告|完整报告/,
+];
+const proposalReportPatterns = [
+    /\b(research|thesis|grant|project)\s+proposal\b/i,
+    /\bproposal\s+(report|draft|plan)\b/i,
+    /\bpropose\s+(a\s+)?(study|project|research)\b/i,
+    /开题报告|研究计划|课题申请|研究方案|项目申请/,
+];
 function matchesAny(text, patterns) {
     return patterns.some((pattern) => pattern.test(text));
 }
@@ -44,6 +56,14 @@ export function selectSkills(params) {
     if (!selected.includes("academic-paper-review") && matchesAny(query, literatureReviewPatterns)) {
         selected.push("systematic-literature-review");
         reasons.push("literature review or survey signal detected");
+    }
+    if (matchesAny(query, proposalReportPatterns)) {
+        selected.push("proposal-report");
+        reasons.push("research proposal signal detected");
+    }
+    if (!selected.includes("proposal-report") && matchesAny(query, researchReportPatterns)) {
+        selected.push("research-report");
+        reasons.push("complete research report signal detected");
     }
     if (selected.length === 0 && matchesAny(query, deepResearchPatterns)) {
         selected.push("deep-research");

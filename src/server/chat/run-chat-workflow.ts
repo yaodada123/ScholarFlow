@@ -6,6 +6,7 @@ import type { ChatRequest, SkillId } from "../schemas.js";
 import type { LlmConfig } from "../llm/env-models.js";
 import { loadLlmConfig } from "../llm/env-models.js";
 import { OpenAICompatibleClient, type OpenAIChatMessage } from "../llm/openai-compatible.js";
+import { knowledgeSourceToResource, listKnowledgeSources } from "../knowledge/store.js";
 import { formatSkillPromptBlock } from "../skills/prompt.js";
 import { getSkills } from "../skills/registry.js";
 import { selectSkills } from "../skills/selector.js";
@@ -124,6 +125,26 @@ function resolveActiveSkills(params: {
     activeSkills: selected.activeSkills.map((skill) => skill.id),
     reason: selected.reason,
   };
+}
+
+async function resolveRequestResources(request: ChatRequest): Promise<ChatRequest["resources"]> {
+  const resources = [...request.resources];
+  if (!request.project_id) return resources;
+
+  try {
+    const projectSources = await listKnowledgeSources(request.project_id);
+    const seen = new Set(resources.map((resource) => resource.uri));
+    for (const source of projectSources) {
+      const resource = knowledgeSourceToResource(source);
+      if (seen.has(resource.uri)) continue;
+      seen.add(resource.uri);
+      resources.push(resource);
+    }
+  } catch (error) {
+    console.warn(`[knowledge] Failed to load project sources for ${request.project_id}`, error);
+  }
+
+  return resources;
 }
 
 function hasSkill(state: Pick<WorkflowState, "activeSkills">, skillId: SkillId): boolean {
@@ -304,6 +325,7 @@ function makeBaseState(params: {
   const { request, threadId, query, activeSkills, skillSelectionReason } = params;
   return {
     threadId,
+    ...(request.project_id ? { projectId: request.project_id } : {}),
     locale: request.locale,
     researchTopic: query,
     messages: [{ role: "user", content: query }],
@@ -511,6 +533,7 @@ function upsertThreadState(params: {
 
   const merged: WorkflowState = {
     ...existing,
+    ...(params.request.project_id ? { projectId: params.request.project_id } : {}),
     locale: params.request.locale,
     enableBackgroundInvestigation: params.request.enable_background_investigation,
     enableWebSearch: params.request.enable_web_search,
@@ -561,11 +584,14 @@ export async function* runChatWorkflow(params: {
   const isFeedback = request.interrupt_feedback === "accepted" || request.interrupt_feedback === "edit_plan";
   const existing = store.get(request.thread_id);
   const query = isFeedback ? (existing?.researchTopic ?? incomingText) : incomingText;
-  const skillSelection = resolveActiveSkills({ request, query, existing, isFeedback });
+  const resolvedResources = await resolveRequestResources(request);
+  const requestWithKnowledge: ChatRequest = { ...request, resources: resolvedResources };
+  const skillSelection = resolveActiveSkills({ request: requestWithKnowledge, query, existing, isFeedback });
 
   trace?.runStarted({
     query: incomingText,
-    resources: request.resources.length,
+    resources: resolvedResources.length,
+    project_id: request.project_id,
     enable_web_search: request.enable_web_search,
     enable_background_investigation: request.enable_background_investigation,
     interrupt_feedback: request.interrupt_feedback,
@@ -576,7 +602,7 @@ export async function* runChatWorkflow(params: {
 
   let state = upsertThreadState({
     store,
-    request,
+    request: requestWithKnowledge,
     query,
     isFeedback,
     activeSkills: skillSelection.activeSkills,
@@ -589,7 +615,7 @@ export async function* runChatWorkflow(params: {
   try {
   if (request.workflow_mode === "chat" && !isFeedback) {
     for await (const event of runPlainChatResponse({
-      request,
+      request: requestWithKnowledge,
       llm,
       incomingText,
       ...(signal ? { signal } : {}),

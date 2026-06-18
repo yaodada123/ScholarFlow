@@ -130,10 +130,17 @@ export function buildPlannerEditPrompt(params) {
 export function buildReporterPrompt(params) {
     const { query, locale, style, plan, observations, sources, skillContext } = params;
     const system = "You are ScholarFlow Reporter, an academic research writing agent. Write a high-quality markdown research report. " +
-        "Ground claims in the provided observations and sources, include citations when sources are provided, and explicitly note limitations when evidence is incomplete. " +
+        "Ground claims in the provided observations and source registry, cite factual claims with source IDs such as [S1], and explicitly note limitations when evidence is incomplete. " +
+        "Use only the provided source IDs; never invent sources, URLs, or citations. " +
         "When active academic skills provide an output template or method, follow those instructions before the default report sections.";
     const sourcesText = sources.length
-        ? sources.map((s, i) => `- [${i + 1}] ${s.title} (${s.uri})`).join("\n")
+        ? sources
+            .map((s) => {
+            const kind = s.kind ? ` type=${s.kind}` : "";
+            const excerpt = s.excerpt ? `\n  Evidence snippet: ${s.excerpt.slice(0, 500)}` : "";
+            return `- [${s.id}]${kind} ${s.title} (${s.uri})${excerpt}`;
+        })
+            .join("\n")
         : "(none)";
     const skills = skillContext ? `\n\n${skillContext}` : "";
     const user = `Locale: ${locale}\n` +
@@ -142,7 +149,8 @@ export function buildReporterPrompt(params) {
         `Plan (JSON):\n${JSON.stringify(plan, null, 2)}\n\n` +
         `Observations:\n${observations.length ? observations.join("\n\n") : "(none)"}\n\n` +
         `Sources:\n${sourcesText}\n\n` +
-        "Return markdown only. The report must include: Recommended Topic Direction, Candidate Topic Comparison, Core Research Questions, Evidence Review, Feasibility and Novelty Assessment, Method or Investigation Plan, Limitations, and Further Reading when appropriate.";
+        "Citation rules: cite every major factual claim in Evidence Review, Feasibility and Novelty Assessment, and Candidate Topic Comparison with source IDs like [S1]. Use only IDs from Sources. If no source supports a claim, state the evidence gap instead of citing.\n" +
+        "Return markdown only. The report must include: Recommended Topic Direction, Candidate Topic Comparison, Core Research Questions, Evidence Review, Evidence Table with columns Source ID/Source/Evidence or Finding/Relevance/Limitation, Feasibility and Novelty Assessment, Method or Investigation Plan, Limitations, and Further Reading or References mapping source IDs to titles and URIs when appropriate.";
     return { system, user };
 }
 export function safeParsePlan(text) {

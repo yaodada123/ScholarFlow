@@ -13,6 +13,7 @@ export type ChatMessage = {
 
 export type WorkflowState = {
   threadId: string;
+  projectId?: string;
   locale: string;
   researchTopic: string;
   messages: ChatMessage[];
@@ -49,4 +50,3 @@ export type NodeName =
   | "researcher"
   | "reporter"
   | "__end__";
-
