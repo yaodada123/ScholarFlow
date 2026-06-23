@@ -2,9 +2,26 @@ import type { LlmConfig } from "./env-models.js";
 
 export type OpenAIChatMessage = {
   role: "system" | "user" | "assistant" | "tool";
-  content: string;
+  content: string | null;
   name?: string;
   tool_call_id?: string;
+  tool_calls?: Array<{
+    id: string;
+    type: "function";
+    function: {
+      name: string;
+      arguments: string;
+    };
+  }>;
+};
+
+export type OpenAIChatTool = {
+  type: "function";
+  function: {
+    name: string;
+    description?: string;
+    parameters: Record<string, unknown>;
+  };
 };
 
 export type ToolCall = {
@@ -39,6 +56,8 @@ export class OpenAICompatibleClient {
 
   async *streamChatCompletions(params: {
     messages: OpenAIChatMessage[];
+    tools?: OpenAIChatTool[];
+    toolChoice?: "auto" | "none";
     signal?: AbortSignal;
   }): AsyncIterable<StreamDelta> {
     const controller = new AbortController();
@@ -56,6 +75,10 @@ export class OpenAICompatibleClient {
       };
       if (this.temperature != null) body.temperature = this.temperature;
       if (this.maxTokens != null) body.max_tokens = this.maxTokens;
+      if (params.tools?.length) {
+        body.tools = params.tools;
+        body.tool_choice = params.toolChoice ?? "auto";
+      }
 
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
@@ -106,6 +129,78 @@ export class OpenAICompatibleClient {
       clearTimeout(timeout);
     }
   }
+
+  async createChatCompletion(params: {
+    messages: OpenAIChatMessage[];
+    tools?: OpenAIChatTool[];
+    toolChoice?: "auto" | "none";
+    signal?: AbortSignal;
+  }): Promise<StreamDelta> {
+    const controller = new AbortController();
+    const signal = params.signal
+      ? AbortSignal.any([params.signal, controller.signal])
+      : controller.signal;
+
+    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+    try {
+      const url = `${this.baseUrl}/chat/completions`;
+      const body: Record<string, unknown> = {
+        model: this.model,
+        messages: params.messages,
+        stream: false,
+      };
+      if (this.temperature != null) body.temperature = this.temperature;
+      if (this.maxTokens != null) body.max_tokens = this.maxTokens;
+      if (params.tools?.length) {
+        body.tools = params.tools;
+        body.tool_choice = params.toolChoice ?? "auto";
+      }
+
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (this.apiKey) headers.Authorization = `Bearer ${this.apiKey}`;
+
+      const res = await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+        signal,
+      });
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(`LLM HTTP ${res.status}: ${res.statusText}${text ? ` - ${text}` : ""}`);
+      }
+
+      const payload = (await res.json().catch(() => null)) as unknown;
+      return extractMessage(payload) ?? {};
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+}
+
+function extractMessage(payload: unknown): StreamDelta | null {
+  if (!payload || typeof payload !== "object") return null;
+  const p = payload as Record<string, unknown>;
+  const choices = p.choices;
+  if (!Array.isArray(choices) || choices.length === 0) return null;
+  const choice = choices[0] as Record<string, unknown>;
+  const finishReasonRaw = choice.finish_reason;
+  const finishReason = typeof finishReasonRaw === "string" ? finishReasonRaw : undefined;
+  const message = choice.message;
+  if (!message || typeof message !== "object") return finishReason ? { finishReason } : null;
+  const m = message as Record<string, unknown>;
+  const content = typeof m.content === "string" ? m.content : undefined;
+  const reasoningContent = typeof m.reasoning_content === "string" ? m.reasoning_content : undefined;
+  const toolCalls = parseToolCalls(m.tool_calls);
+  return {
+    ...(content ? { content } : {}),
+    ...(reasoningContent ? { reasoningContent } : {}),
+    ...(toolCalls ? { toolCalls } : {}),
+    ...(finishReason ? { finishReason } : {}),
+  };
 }
 
 function extractDelta(payload: unknown): StreamDelta | null {

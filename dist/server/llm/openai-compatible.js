@@ -30,6 +30,10 @@ export class OpenAICompatibleClient {
                 body.temperature = this.temperature;
             if (this.maxTokens != null)
                 body.max_tokens = this.maxTokens;
+            if (params.tools?.length) {
+                body.tools = params.tools;
+                body.tool_choice = params.toolChoice ?? "auto";
+            }
             const headers = {
                 "Content-Type": "application/json",
             };
@@ -80,6 +84,73 @@ export class OpenAICompatibleClient {
             clearTimeout(timeout);
         }
     }
+    async createChatCompletion(params) {
+        const controller = new AbortController();
+        const signal = params.signal
+            ? AbortSignal.any([params.signal, controller.signal])
+            : controller.signal;
+        const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+        try {
+            const url = `${this.baseUrl}/chat/completions`;
+            const body = {
+                model: this.model,
+                messages: params.messages,
+                stream: false,
+            };
+            if (this.temperature != null)
+                body.temperature = this.temperature;
+            if (this.maxTokens != null)
+                body.max_tokens = this.maxTokens;
+            if (params.tools?.length) {
+                body.tools = params.tools;
+                body.tool_choice = params.toolChoice ?? "auto";
+            }
+            const headers = {
+                "Content-Type": "application/json",
+            };
+            if (this.apiKey)
+                headers.Authorization = `Bearer ${this.apiKey}`;
+            const res = await fetch(url, {
+                method: "POST",
+                headers,
+                body: JSON.stringify(body),
+                signal,
+            });
+            if (!res.ok) {
+                const text = await res.text().catch(() => "");
+                throw new Error(`LLM HTTP ${res.status}: ${res.statusText}${text ? ` - ${text}` : ""}`);
+            }
+            const payload = (await res.json().catch(() => null));
+            return extractMessage(payload) ?? {};
+        }
+        finally {
+            clearTimeout(timeout);
+        }
+    }
+}
+function extractMessage(payload) {
+    if (!payload || typeof payload !== "object")
+        return null;
+    const p = payload;
+    const choices = p.choices;
+    if (!Array.isArray(choices) || choices.length === 0)
+        return null;
+    const choice = choices[0];
+    const finishReasonRaw = choice.finish_reason;
+    const finishReason = typeof finishReasonRaw === "string" ? finishReasonRaw : undefined;
+    const message = choice.message;
+    if (!message || typeof message !== "object")
+        return finishReason ? { finishReason } : null;
+    const m = message;
+    const content = typeof m.content === "string" ? m.content : undefined;
+    const reasoningContent = typeof m.reasoning_content === "string" ? m.reasoning_content : undefined;
+    const toolCalls = parseToolCalls(m.tool_calls);
+    return {
+        ...(content ? { content } : {}),
+        ...(reasoningContent ? { reasoningContent } : {}),
+        ...(toolCalls ? { toolCalls } : {}),
+        ...(finishReason ? { finishReason } : {}),
+    };
 }
 function extractDelta(payload) {
     if (!payload || typeof payload !== "object")

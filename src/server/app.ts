@@ -15,6 +15,7 @@ import { ChatRequestSchema, type ChatRequest } from "./schemas.js";
 import { evaluateReportDeterministic, parseLlmEvaluation } from "./evaluation/report-evaluator.js";
 import { getConfiguredModels, loadLlmConfig } from "./llm/env-models.js";
 import { OpenAICompatibleClient } from "./llm/openai-compatible.js";
+import { listMcpServerTools } from "./mcp/client.js";
 import { runChatWorkflow } from "./chat/run-chat-workflow.js";
 import { allSkills } from "./skills/registry.js";
 import { ThreadStore } from "./runtime/thread-store.js";
@@ -254,17 +255,20 @@ function requestOrigin(request: FastifyRequest): string {
 
 const McpServerMetadataRequestSchema = z.discriminatedUnion("transport", [
   z.object({
+    name: z.string().optional().default("MCP Server"),
     transport: z.literal("stdio"),
     command: z.string().min(1),
     args: z.array(z.string()).optional().default([]),
     env: z.record(z.string(), z.string()).optional().default({}),
   }),
   z.object({
+    name: z.string().optional().default("MCP Server"),
     transport: z.literal("sse"),
     url: z.string().min(1),
     headers: z.record(z.string(), z.string()).optional().default({}),
   }),
   z.object({
+    name: z.string().optional().default("MCP Server"),
     transport: z.literal("streamable_http"),
     url: z.string().min(1),
     headers: z.record(z.string(), z.string()).optional().default({}),
@@ -540,7 +544,8 @@ app.post("/api/mcp/server/metadata", async (request: FastifyRequest, reply: Fast
 
   try {
     const parsed = McpServerMetadataRequestSchema.parse(request.body ?? {});
-    reply.send({ ...parsed, tools: [] as unknown[] });
+    const tools = await listMcpServerTools(parsed);
+    reply.send({ ...parsed, tools });
     return reply;
   } catch (e) {
     const message = e instanceof Error ? e.message : "Invalid request body";

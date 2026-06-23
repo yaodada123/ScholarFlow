@@ -3,6 +3,8 @@ import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
 import { loadLlmConfig } from "../llm/env-models.js";
 import { OpenAICompatibleClient } from "../llm/openai-compatible.js";
 import { knowledgeSourceToResource, listKnowledgeSources } from "../knowledge/store.js";
+import { callMcpTool } from "../mcp/client.js";
+import { formatMcpToolsForPrompt, mcpToolsToOpenAiTools, resolveEnabledMcpTools } from "../mcp/tools.js";
 import { formatSkillPromptBlock } from "../skills/prompt.js";
 import { getSkills } from "../skills/registry.js";
 import { selectSkills } from "../skills/selector.js";
@@ -108,6 +110,53 @@ function academicSearchLimit(state) {
         return Math.min(20, Math.max(10, state.maxSearchResults));
     }
     return state.maxSearchResults;
+}
+function openAiToolCallToSse(toolCall) {
+    return {
+        type: "tool_call",
+        id: toolCall.id,
+        name: toolCall.name,
+        args: toolCall.args,
+    };
+}
+function buildToolCallChunks(toolCalls) {
+    return toolCalls.map((toolCall, index) => ({
+        type: "tool_call_chunk",
+        index,
+        id: toolCall.id,
+        name: toolCall.name,
+        args: JSON.stringify(toolCall.args),
+    }));
+}
+function toolResultContent(title, content) {
+    return JSON.stringify([{ type: "page", title, url: "", content }]);
+}
+function buildMcpResearchPrompt(params) {
+    const mcpPrompt = formatMcpToolsForPrompt(params.mcpTools);
+    return [
+        {
+            role: "system",
+            content: [
+                "You are ScholarFlow Researcher. Decide whether MCP tools are needed to gather additional evidence for the research report.",
+                "Call at most the tools that are directly useful. If built-in retrieval and academic search are sufficient, answer with a concise evidence summary and do not call tools.",
+                "Do not invent tool names or arguments. Prefer read-only, evidence-gathering calls.",
+            ].join(" "),
+        },
+        {
+            role: "user",
+            content: [
+                `Research topic: ${params.state.researchTopic}`,
+                params.skillContext ? `Skill guidance:\n${params.skillContext}` : null,
+                params.state.currentPlan ? `Plan:\n${JSON.stringify(params.state.currentPlan, null, 2)}` : null,
+                params.state.backgroundInvestigationResults ? `Background investigation:\n${params.state.backgroundInvestigationResults}` : null,
+                params.retrievedText ? `Retrieved resources:\n${params.retrievedText}` : null,
+                params.academicText ? `Academic literature search:\n${params.academicText}` : null,
+                mcpPrompt,
+            ]
+                .filter(Boolean)
+                .join("\n\n"),
+        },
+    ];
 }
 function isChineseLocale(locale) {
     return locale.toLowerCase().startsWith("zh");
@@ -725,13 +774,7 @@ export async function* runChatWorkflow(params) {
                     args: { query: s.researchTopic, max_results: s.maxSearchResults },
                 },
             ];
-            const toolCallChunks = toolCalls.map((toolCall, index) => ({
-                type: "tool_call_chunk",
-                index,
-                id: toolCall.id,
-                name: toolCall.name,
-                args: JSON.stringify(toolCall.args),
-            }));
+            const toolCallChunks = buildToolCallChunks(toolCalls);
             emit(config, {
                 type: "tool_calls",
                 data: {
@@ -1114,13 +1157,7 @@ export async function* runChatWorkflow(params) {
                     ]
                     : []),
             ];
-            const toolCallChunks = toolCalls.map((toolCall, index) => ({
-                type: "tool_call_chunk",
-                index,
-                id: toolCall.id,
-                name: toolCall.name,
-                args: JSON.stringify(toolCall.args),
-            }));
+            const toolCallChunks = buildToolCallChunks(toolCalls);
             emit(config, {
                 type: "tool_calls",
                 data: {
@@ -1208,6 +1245,82 @@ export async function* runChatWorkflow(params) {
                     });
                 }
             }
+            const mcpTools = resolveEnabledMcpTools({ settings: request.mcp_settings, agent: "researcher" });
+            const mcpToolByName = new Map(mcpTools.map((tool) => [tool.openAiName, tool]));
+            const mcpObservations = [];
+            if (llm && mcpTools.length) {
+                const mcpMessages = buildMcpResearchPrompt({
+                    state: s,
+                    retrievedText: retrievalText,
+                    academicText,
+                    skillContext: researcherSkillContext,
+                    mcpTools,
+                });
+                const mcpOpenAiTools = mcpToolsToOpenAiTools(mcpTools);
+                let pendingToolCalls = [];
+                try {
+                    const completion = await llm.createChatCompletion({
+                        messages: mcpMessages,
+                        tools: mcpOpenAiTools,
+                        toolChoice: "auto",
+                        ...(config?.signal ? { signal: config.signal } : {}),
+                    });
+                    pendingToolCalls = completion.toolCalls ?? [];
+                }
+                catch (e) {
+                    mcpObservations.push(`MCP tool planning failed: ${e instanceof Error ? e.message : String(e)}`);
+                }
+                const boundedToolCalls = pendingToolCalls.slice(0, 4).filter((toolCall) => mcpToolByName.has(toolCall.name));
+                if (boundedToolCalls.length) {
+                    const sseToolCalls = boundedToolCalls.map(openAiToolCallToSse);
+                    emit(config, {
+                        type: "tool_calls",
+                        data: {
+                            thread_id: s.threadId,
+                            id: researcherId,
+                            agent: "researcher",
+                            role: "assistant",
+                            tool_calls: sseToolCalls,
+                            tool_call_chunks: buildToolCallChunks(sseToolCalls),
+                        },
+                    });
+                    emit(config, {
+                        type: "message_chunk",
+                        data: {
+                            thread_id: s.threadId,
+                            id: researcherId,
+                            agent: "researcher",
+                            role: "assistant",
+                            finish_reason: "tool_calls",
+                        },
+                    });
+                }
+                for (const toolCall of boundedToolCalls) {
+                    const tool = mcpToolByName.get(toolCall.name);
+                    if (!tool)
+                        continue;
+                    let resultText = "";
+                    try {
+                        const result = await callMcpTool(tool.config, tool.toolName, toolCall.args);
+                        resultText = result.content;
+                    }
+                    catch (e) {
+                        resultText = `MCP tool error: ${e instanceof Error ? e.message : String(e)}`;
+                    }
+                    mcpObservations.push(`MCP tool ${tool.openAiName} (${tool.serverName}/${tool.toolName}) result:\n${resultText}`);
+                    emit(config, {
+                        type: "tool_call_result",
+                        data: {
+                            thread_id: s.threadId,
+                            id: researcherId,
+                            agent: "researcher",
+                            role: "tool",
+                            tool_call_id: toolCall.id,
+                            content: toolResultContent(tool.openAiName, resultText),
+                        },
+                    });
+                }
+            }
             emit(config, {
                 type: "message_chunk",
                 data: {
@@ -1229,6 +1342,7 @@ export async function* runChatWorkflow(params) {
                 s.backgroundInvestigationResults ? `Background investigation:\n${s.backgroundInvestigationResults}` : null,
                 retrievalText ? `Retrieved resources:\n${retrievalText}` : null,
                 academicText ? `Academic literature search:\n${academicText}` : null,
+                mcpObservations.length ? `MCP tool evidence:\n${mcpObservations.join("\n\n")}` : null,
             ].filter((x) => Boolean(x));
             const next = {
                 ...s,
