@@ -10,7 +10,9 @@ import {
   Sparkles,
   ThumbsDown,
   ThumbsUp,
+  WandSparkles,
 } from "lucide-react";
+import { DIFF_DELETE, DIFF_INSERT, diffLinesRaw } from "jest-diff";
 import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -23,8 +25,24 @@ import {
   DialogTitle,
 } from "~/components/ui/dialog";
 import { Progress } from "~/components/ui/progress";
-import { evaluateReport, type EvaluationResult } from "~/core/api";
+import {
+  evaluateReport,
+  improveReport,
+  type EvaluationResult,
+  type ImproveReportResult,
+} from "~/core/api";
 import { cn } from "~/lib/utils";
+
+type DialogLineDiff = {
+  type: "added" | "removed" | "unchanged";
+  text: string;
+};
+
+type ImprovementDetails = {
+  previousEvaluation: EvaluationResult;
+  result: ImproveReportResult;
+  diff: DialogLineDiff[];
+};
 
 interface EvaluationDialogProps {
   open: boolean;
@@ -32,6 +50,10 @@ interface EvaluationDialogProps {
   reportContent: string;
   query: string;
   reportStyle?: string;
+  onReportImproved?: (
+    result: ImproveReportResult,
+    previousEvaluation: EvaluationResult,
+  ) => void;
 }
 
 function GradeBadge({ grade }: { grade: string }) {
@@ -85,17 +107,58 @@ function MetricItem({
   );
 }
 
+function buildLineDiff(
+  previousContent: string,
+  nextContent: string,
+): DialogLineDiff[] {
+  return diffLinesRaw(previousContent.split("\n"), nextContent.split("\n")).map(
+    (part) => ({
+      type:
+        part[0] === DIFF_INSERT
+          ? "added"
+          : part[0] === DIFF_DELETE
+            ? "removed"
+            : "unchanged",
+      text: part[1],
+    }),
+  );
+}
+
+function DiffLine({ line }: { line: DialogLineDiff }) {
+  const sign =
+    line.type === "added" ? "+" : line.type === "removed" ? "-" : " ";
+  return (
+    <div
+      className={cn(
+        "grid grid-cols-[1.25rem_1fr] gap-2 px-2 py-0.5 font-mono text-xs",
+        line.type === "added" && "bg-emerald-500/10 text-emerald-700",
+        line.type === "removed" && "bg-red-500/10 text-red-700",
+        line.type === "unchanged" && "text-muted-foreground",
+      )}
+    >
+      <span className="text-right select-none">{sign}</span>
+      <span className="break-words whitespace-pre-wrap">
+        {line.text || " "}
+      </span>
+    </div>
+  );
+}
+
 export function EvaluationDialog({
   open,
   onOpenChange,
   reportContent,
   query,
   reportStyle,
+  onReportImproved,
 }: EvaluationDialogProps) {
   const t = useTranslations("chat.evaluation");
   const [loading, setLoading] = useState(false);
   const [deepLoading, setDeepLoading] = useState(false);
+  const [improving, setImproving] = useState(false);
   const [result, setResult] = useState<EvaluationResult | null>(null);
+  const [improvementDetails, setImprovementDetails] =
+    useState<ImprovementDetails | null>(null);
   const [error, setError] = useState<string | null>(null);
   const hasRunInitialEvaluation = useRef(false);
 
@@ -126,6 +189,36 @@ export function EvaluationDialog({
     [reportContent, query, reportStyle],
   );
 
+  const runImprovement = useCallback(async () => {
+    if (!result || !onReportImproved) return;
+
+    setImproving(true);
+    setError(null);
+
+    try {
+      const improved = await improveReport(
+        reportContent,
+        query,
+        reportStyle,
+        result,
+      );
+      const details = {
+        previousEvaluation: result,
+        result: improved,
+        diff: buildLineDiff(reportContent, improved.content),
+      };
+      setResult(improved.evaluation);
+      setImprovementDetails(details);
+      onReportImproved(improved, result);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Report improvement failed",
+      );
+    } finally {
+      setImproving(false);
+    }
+  }, [onReportImproved, query, reportContent, reportStyle, result]);
+
   useEffect(() => {
     if (open && !hasRunInitialEvaluation.current) {
       hasRunInitialEvaluation.current = true;
@@ -136,6 +229,7 @@ export function EvaluationDialog({
   useEffect(() => {
     if (!open) {
       setResult(null);
+      setImprovementDetails(null);
       setError(null);
       hasRunInitialEvaluation.current = false;
     }
@@ -268,6 +362,95 @@ export function EvaluationDialog({
                     </ul>
                   </div>
                 )}
+
+                {/* Suggestions */}
+                {result.llm_evaluation.suggestions.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-sm font-medium text-blue-600">
+                      <Sparkles className="h-4 w-4" />
+                      {t("suggestions")}
+                    </div>
+                    <ul className="space-y-1 text-sm">
+                      {result.llm_evaluation.suggestions
+                        .slice(0, 4)
+                        .map((suggestion, i) => (
+                          <li key={i} className="text-muted-foreground">
+                            • {suggestion}
+                          </li>
+                        ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {onReportImproved && (
+              <Button
+                className="w-full"
+                onClick={runImprovement}
+                disabled={improving || loading || deepLoading}
+              >
+                {improving ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    {t("improving")}
+                  </>
+                ) : (
+                  <>
+                    <WandSparkles className="mr-2 h-4 w-4" />
+                    {t("improveReport")}
+                  </>
+                )}
+              </Button>
+            )}
+
+            {improvementDetails && (
+              <div className="bg-muted/30 space-y-3 rounded-lg border p-3 text-sm">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h4 className="font-medium">{t("optimizationDetails")}</h4>
+                  <span className="text-muted-foreground">
+                    {t("scoreChange", {
+                      before: improvementDetails.previousEvaluation.score,
+                      after: improvementDetails.result.evaluation.score,
+                    })}
+                  </span>
+                </div>
+
+                {improvementDetails.result.improvement_plan?.length ? (
+                  <div className="space-y-1">
+                    <div className="font-medium">{t("improvementBasis")}</div>
+                    <ul className="text-muted-foreground list-disc space-y-1 pl-5">
+                      {improvementDetails.result.improvement_plan.map(
+                        (item) => (
+                          <li key={item}>{item}</li>
+                        ),
+                      )}
+                    </ul>
+                  </div>
+                ) : null}
+
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="font-medium">{t("lineDiff")}</div>
+                    <div className="text-muted-foreground text-xs">
+                      {t("diffSummary", {
+                        added: improvementDetails.diff.filter(
+                          (line) => line.type === "added",
+                        ).length,
+                        removed: improvementDetails.diff.filter(
+                          (line) => line.type === "removed",
+                        ).length,
+                      })}
+                    </div>
+                  </div>
+                  <div className="bg-background max-h-72 overflow-auto rounded-md border">
+                    {improvementDetails.diff
+                      .filter((line) => line.type !== "unchanged")
+                      .map((line, index) => (
+                        <DiffLine key={`${line.type}-${index}`} line={line} />
+                      ))}
+                  </div>
+                </div>
               </div>
             )}
 

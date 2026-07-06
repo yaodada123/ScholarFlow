@@ -143,6 +143,9 @@ importers:
       js-cookie:
         specifier: ^3.0.5
         version: 3.0.5
+      jest-diff:
+        specifier: ^30.2.0
+        version: 30.2.0
       jspdf:
         specifier: ^4.0.0
         version: 4.0.0

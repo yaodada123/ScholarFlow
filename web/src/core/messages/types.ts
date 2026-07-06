@@ -24,6 +24,29 @@ export interface Message {
   finishReason?: "stop" | "interrupt" | "tool_calls";
   interruptFeedback?: string;
   resources?: Array<Resource>;
+  reportVersions?: ReportVersion[];
+}
+
+export interface ReportVersion {
+  id: string;
+  content: string;
+  label: string;
+  createdAt: string;
+  source: "generated" | "optimized";
+  evaluation?: ReportVersionEvaluation;
+  previousEvaluation?: ReportVersionEvaluation;
+  improvementPlan?: string[];
+  diff?: ReportLineDiff[];
+}
+
+export interface ReportVersionEvaluation {
+  score: number;
+  grade: string;
+}
+
+export interface ReportLineDiff {
+  type: "added" | "removed" | "unchanged";
+  text: string;
 }
 
 export interface Option {

@@ -12,6 +12,7 @@ import {
 import DOMPurify from "dompurify";
 import { saveAs } from "file-saver";
 import html2canvas from "html2canvas";
+import { DIFF_DELETE, DIFF_INSERT, diffLinesRaw } from "jest-diff";
 import { jsPDF } from "jspdf";
 import {
   Check,
@@ -25,6 +26,7 @@ import {
   FileCode,
   FileImage,
   FileType,
+  History,
 } from "lucide-react";
 import { marked } from "marked";
 import { useTranslations } from "next-intl";
@@ -42,8 +44,15 @@ import {
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
+import type { ReportLineDiff } from "~/core/messages";
 import { useReplay } from "~/core/replay";
-import { closeResearch, getResearchQuery, useStore, useSettingsStore } from "~/core/store";
+import {
+  closeResearch,
+  getResearchQuery,
+  useStore,
+  useSettingsStore,
+} from "~/core/store";
+import type { EvaluationResult, ImproveReportResult } from "~/core/api";
 import { cn } from "~/lib/utils";
 
 import { AgentTraceBlock } from "./agent-trace-block";
@@ -51,6 +60,45 @@ import { EvaluationDialog } from "./evaluation-dialog";
 import { EvidenceTableBlock } from "./evidence-table-block";
 import { ResearchActivitiesBlock } from "./research-activities-block";
 import { ResearchReportBlock } from "./research-report-block";
+
+const EMPTY_REPORT_VERSIONS = [] as const;
+
+function buildLineDiff(
+  previousContent: string,
+  nextContent: string,
+): ReportLineDiff[] {
+  return diffLinesRaw(previousContent.split("\n"), nextContent.split("\n")).map(
+    (part) => ({
+      type:
+        part[0] === DIFF_INSERT
+          ? "added"
+          : part[0] === DIFF_DELETE
+            ? "removed"
+            : "unchanged",
+      text: part[1],
+    }),
+  );
+}
+
+function DiffLine({ line }: { line: ReportLineDiff }) {
+  const sign =
+    line.type === "added" ? "+" : line.type === "removed" ? "-" : " ";
+  return (
+    <div
+      className={cn(
+        "grid grid-cols-[1.5rem_1fr] gap-2 px-2 py-0.5 font-mono text-xs",
+        line.type === "added" && "bg-emerald-500/10 text-emerald-700",
+        line.type === "removed" && "bg-red-500/10 text-red-700",
+        line.type === "unchanged" && "text-muted-foreground",
+      )}
+    >
+      <span className="text-right select-none">{sign}</span>
+      <span className="break-words whitespace-pre-wrap">
+        {line.text || " "}
+      </span>
+    </div>
+  );
+}
 
 export function ResearchBlock({
   className,
@@ -71,6 +119,26 @@ export function ResearchBlock({
   const reportStreaming = useStore((state) =>
     reportId ? (state.messages.get(reportId)?.isStreaming ?? false) : false,
   );
+  const reportVersions = useStore((state) =>
+    reportId
+      ? (state.messages.get(reportId)?.reportVersions ?? EMPTY_REPORT_VERSIONS)
+      : EMPTY_REPORT_VERSIONS,
+  );
+  const reportContent = useStore((state) =>
+    reportId ? (state.messages.get(reportId)?.content ?? "") : "",
+  );
+  const currentReportVersion = reportVersions.find(
+    (version) => version.content === reportContent,
+  );
+  const visibleDiffLines =
+    currentReportVersion?.diff?.filter((line) => line.type !== "unchanged") ??
+    [];
+  const addedLineCount = visibleDiffLines.filter(
+    (line) => line.type === "added",
+  ).length;
+  const removedLineCount = visibleDiffLines.filter(
+    (line) => line.type === "removed",
+  ).length;
   const { isReplay } = useReplay();
   useEffect(() => {
     if (hasReport) {
@@ -629,6 +697,78 @@ ${htmlContent}
     setEditing((editing) => !editing);
   }, []);
 
+  const handleSelectReportVersion = useCallback(
+    (versionId: string) => {
+      if (!reportId) return;
+      const report = useStore.getState().messages.get(reportId);
+      const version = report?.reportVersions?.find(
+        (item) => item.id === versionId,
+      );
+      if (!report || !version) return;
+
+      useStore.getState().updateMessage({
+        ...report,
+        content: version.content,
+        contentChunks: [version.content],
+      });
+    },
+    [reportId],
+  );
+
+  const handleReportImproved = useCallback(
+    (result: ImproveReportResult, previousEvaluation: EvaluationResult) => {
+      if (!reportId) return;
+      const report = useStore.getState().messages.get(reportId);
+      if (!report) return;
+
+      const now = new Date();
+      const existingVersions = report.reportVersions ?? [
+        {
+          id: `${report.id}-generated`,
+          content: report.content,
+          label: t("originalVersion"),
+          createdAt: now.toISOString(),
+          source: "generated" as const,
+          evaluation: {
+            score: previousEvaluation.score,
+            grade: previousEvaluation.grade,
+          },
+        },
+      ];
+      const improvedContent = result.content.trim();
+      const diff = buildLineDiff(report.content, improvedContent);
+      const nextVersions = [
+        ...existingVersions,
+        {
+          id: `${report.id}-optimized-${now.getTime()}`,
+          content: improvedContent,
+          label: t("optimizedVersion", { count: existingVersions.length }),
+          createdAt: now.toISOString(),
+          source: "optimized" as const,
+          previousEvaluation: {
+            score: previousEvaluation.score,
+            grade: previousEvaluation.grade,
+          },
+          evaluation: {
+            score: result.evaluation.score,
+            grade: result.evaluation.grade,
+          },
+          improvementPlan: result.improvement_plan,
+          diff,
+        },
+      ];
+
+      useStore.getState().updateMessage({
+        ...report,
+        content: improvedContent,
+        contentChunks: [improvedContent],
+        reportVersions: nextVersions,
+      });
+      toast.success(t("reportOptimized"));
+    },
+    [reportId, t],
+  );
+
   // When the research id changes, set the active tab to activities
   useEffect(() => {
     if (!hasReport) {
@@ -639,105 +779,13 @@ ${htmlContent}
   return (
     <div className={cn("h-full w-full", className)}>
       <Card className={cn("relative h-full w-full pt-4", className)}>
-        <div className="absolute right-4 flex h-9 items-center justify-center">
-          {hasReport && !reportStreaming && (
-            <>
-              <Tooltip title={t("edit")}>
-                <Button
-                  className="text-gray-400"
-                  size="icon"
-                  variant="ghost"
-                  disabled={isReplay}
-                  onClick={handleEdit}
-                >
-                  {editing ? <Undo2 /> : <Pencil />}
-                </Button>
-              </Tooltip>
-              <Tooltip title={t("copy")}>
-                <Button
-                  className="text-gray-400"
-                  size="icon"
-                  variant="ghost"
-                  onClick={handleCopy}
-                >
-                  {copied ? <Check /> : <Copy />}
-                </Button>
-              </Tooltip>
-              <Tooltip title={t("evaluateReport")}>
-                <Button
-                  className="text-gray-400"
-                  size="icon"
-                  variant="ghost"
-                  onClick={() => setShowEvaluation(true)}
-                >
-                  <GraduationCap />
-                </Button>
-              </Tooltip>
-              <DropdownMenu>
-                <Tooltip title={t("downloadReport")}>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      className="text-gray-400"
-                      size="icon"
-                      variant="ghost"
-                    >
-                      <Download />
-                    </Button>
-                  </DropdownMenuTrigger>
-                </Tooltip>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={handleDownloadMarkdown}>
-                    <FileText className="mr-2 h-4 w-4" />
-                    {t("downloadMarkdown")}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleDownloadHTML}>
-                    <FileCode className="mr-2 h-4 w-4" />
-                    {t("downloadHTML")}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={handleDownloadPDF}
-                    disabled={isDownloading}
-                  >
-                    <FileType className="mr-2 h-4 w-4" />
-                    {t("downloadPDF")}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={handleDownloadWord}
-                    disabled={isDownloading}
-                  >
-                    <FileText className="mr-2 h-4 w-4" />
-                    {t("downloadWord")}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={handleDownloadImage}
-                    disabled={isDownloading}
-                  >
-                    <FileImage className="mr-2 h-4 w-4" />
-                    {t("downloadImage")}
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </>
-          )}
-          <Tooltip title={t("close")}>
-            <Button
-              className="text-gray-400"
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                closeResearch();
-              }}
-            >
-              <X />
-            </Button>
-          </Tooltip>
-        </div>
         <Tabs
           className="flex h-full w-full flex-col"
           value={activeTab}
           onValueChange={(value) => setActiveTab(value)}
         >
-          <div className="flex w-full justify-center">
+          <div className="grid w-full grid-cols-[minmax(7rem,1fr)_auto_minmax(7rem,1fr)] items-center gap-3 px-4">
+            <div />
             <TabsList className="">
               <TabsTrigger
                 className="px-8"
@@ -756,6 +804,127 @@ ${htmlContent}
                 {t("trace.title")}
               </TabsTrigger>
             </TabsList>
+            <div className="flex min-w-0 justify-end gap-1">
+              {hasReport && !reportStreaming && (
+                <>
+                  <Tooltip title={t("edit")}>
+                    <Button
+                      className="text-gray-400"
+                      size="icon"
+                      variant="ghost"
+                      disabled={isReplay}
+                      onClick={handleEdit}
+                    >
+                      {editing ? <Undo2 /> : <Pencil />}
+                    </Button>
+                  </Tooltip>
+                  <Tooltip title={t("copy")}>
+                    <Button
+                      className="text-gray-400"
+                      size="icon"
+                      variant="ghost"
+                      onClick={handleCopy}
+                    >
+                      {copied ? <Check /> : <Copy />}
+                    </Button>
+                  </Tooltip>
+                  <Tooltip title={t("evaluateReport")}>
+                    <Button
+                      className="text-gray-400"
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => setShowEvaluation(true)}
+                    >
+                      <GraduationCap />
+                    </Button>
+                  </Tooltip>
+                  {reportVersions.length > 1 && (
+                    <DropdownMenu>
+                      <Tooltip title={t("reportVersions")}>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            className="text-gray-400"
+                            size="icon"
+                            variant="ghost"
+                          >
+                            <History />
+                          </Button>
+                        </DropdownMenuTrigger>
+                      </Tooltip>
+                      <DropdownMenuContent align="end">
+                        {reportVersions.map((version) => (
+                          <DropdownMenuItem
+                            key={version.id}
+                            onClick={() =>
+                              handleSelectReportVersion(version.id)
+                            }
+                          >
+                            <History className="mr-2 h-4 w-4" />
+                            {version.label}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
+                  <DropdownMenu>
+                    <Tooltip title={t("downloadReport")}>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          className="text-gray-400"
+                          size="icon"
+                          variant="ghost"
+                        >
+                          <Download />
+                        </Button>
+                      </DropdownMenuTrigger>
+                    </Tooltip>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={handleDownloadMarkdown}>
+                        <FileText className="mr-2 h-4 w-4" />
+                        {t("downloadMarkdown")}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={handleDownloadHTML}>
+                        <FileCode className="mr-2 h-4 w-4" />
+                        {t("downloadHTML")}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={handleDownloadPDF}
+                        disabled={isDownloading}
+                      >
+                        <FileType className="mr-2 h-4 w-4" />
+                        {t("downloadPDF")}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={handleDownloadWord}
+                        disabled={isDownloading}
+                      >
+                        <FileText className="mr-2 h-4 w-4" />
+                        {t("downloadWord")}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={handleDownloadImage}
+                        disabled={isDownloading}
+                      >
+                        <FileImage className="mr-2 h-4 w-4" />
+                        {t("downloadImage")}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </>
+              )}
+              <Tooltip title={t("close")}>
+                <Button
+                  className="text-gray-400"
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => {
+                    closeResearch();
+                  }}
+                >
+                  <X />
+                </Button>
+              </Tooltip>
+            </div>
           </div>
           <TabsContent
             className="h-full min-h-0 flex-grow px-8"
@@ -768,6 +937,53 @@ ${htmlContent}
               scrollShadowColor="var(--card)"
               autoScrollToBottom={!hasReport || reportStreaming}
             >
+              {currentReportVersion?.source === "optimized" && (
+                <div className="bg-muted/30 mt-4 space-y-4 rounded-lg border p-4 text-sm">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="font-medium">
+                      {t("optimizationDetails")}
+                    </div>
+                    {currentReportVersion.previousEvaluation &&
+                      currentReportVersion.evaluation && (
+                        <div className="text-muted-foreground">
+                          {t("scoreChange", {
+                            before:
+                              currentReportVersion.previousEvaluation.score,
+                            after: currentReportVersion.evaluation.score,
+                          })}
+                        </div>
+                      )}
+                    <div className="text-muted-foreground">
+                      {t("diffSummary", {
+                        added: addedLineCount,
+                        removed: removedLineCount,
+                      })}
+                    </div>
+                  </div>
+
+                  {currentReportVersion.improvementPlan?.length ? (
+                    <div className="space-y-2">
+                      <div className="font-medium">{t("improvementBasis")}</div>
+                      <ul className="text-muted-foreground list-disc space-y-1 pl-5">
+                        {currentReportVersion.improvementPlan.map((item) => (
+                          <li key={item}>{item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+
+                  {visibleDiffLines.length ? (
+                    <div className="space-y-2">
+                      <div className="font-medium">{t("lineDiff")}</div>
+                      <div className="bg-background max-h-80 overflow-auto rounded-md border">
+                        {visibleDiffLines.map((line, index) => (
+                          <DiffLine key={`${line.type}-${index}`} line={line} />
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              )}
               {reportId && researchId && (
                 <ResearchReportBlock
                   className="mt-4"
@@ -809,10 +1025,7 @@ ${htmlContent}
               autoScrollToBottom={false}
             >
               {researchId && (
-                <EvidenceTableBlock
-                  className="mt-4"
-                  researchId={researchId}
-                />
+                <EvidenceTableBlock className="mt-4" researchId={researchId} />
               )}
             </ScrollContainer>
           </TabsContent>
@@ -848,7 +1061,10 @@ ${htmlContent}
             useStore.getState().messages.get(reportId)?.content ?? ""
           }
           query={getResearchQuery(researchId)}
-          reportStyle={useSettingsStore.getState().general.reportStyle.toLowerCase()}
+          reportStyle={useSettingsStore
+            .getState()
+            .general.reportStyle.toLowerCase()}
+          onReportImproved={handleReportImproved}
         />
       )}
     </div>

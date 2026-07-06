@@ -55,6 +55,19 @@ export interface EvaluateReportRequest {
   use_llm?: boolean;
 }
 
+export interface ImproveReportRequest {
+  content: string;
+  query: string;
+  report_style?: string;
+  evaluation?: EvaluationResult;
+}
+
+export interface ImproveReportResult {
+  content: string;
+  evaluation: EvaluationResult;
+  improvement_plan?: string[];
+}
+
 /**
  * Evaluate a report's quality using automated metrics and optionally LLM-as-Judge.
  *
@@ -85,6 +98,32 @@ export async function evaluateReport(
 
   if (!response.ok) {
     throw new Error(`Evaluation failed: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+export async function improveReport(
+  content: string,
+  query: string,
+  reportStyle?: string,
+  evaluation?: EvaluationResult,
+): Promise<ImproveReportResult> {
+  const response = await fetch(resolveServiceURL("report/improve"), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      content,
+      query,
+      report_style: reportStyle ?? "default",
+      evaluation,
+    } satisfies ImproveReportRequest),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Report improvement failed: ${response.statusText}`);
   }
 
   return response.json();
