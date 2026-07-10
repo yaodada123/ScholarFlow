@@ -25,6 +25,7 @@ import { buildLocalResource, extractTextFromRagFile, isAllowedRagFilename, RagTe
 import { indexLocalResource } from "./rag/lancedb-store.js";
 import { listReplayRuns, listAllReplayRuns, readLatestReplayRun, readReplayRun, ReplayRecorder, type ReplayChatEvent } from "./replay/recorder.js";
 import { listTraceRuns, readLatestTraceRun, readTraceRun, TraceRecorder } from "./trace/recorder.js";
+import { isLangfuseEnabled } from "./trace/langfuse.js";
 import {
   addKnowledgeSource,
   createProject,
@@ -385,6 +386,9 @@ app.get("/api/config", async () => {
       reasoning: models.reasoning ?? [],
       ...(models.vision ? { vision: models.vision } : {}),
       ...(models.code ? { code: models.code } : {}),
+    },
+    observability: {
+      langfuse_enabled: isLangfuseEnabled(),
     },
   };
 });

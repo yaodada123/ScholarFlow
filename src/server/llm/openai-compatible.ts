@@ -1,4 +1,5 @@
 import type { LlmConfig } from "./env-models.js";
+import type { LangfuseGenerationTrace, LangfuseRuntime } from "../trace/langfuse.js";
 
 export type OpenAIChatMessage = {
   role: "system" | "user" | "assistant" | "tool";
@@ -37,6 +38,10 @@ export type StreamDelta = {
   finishReason?: "stop" | "tool_calls" | "length" | string;
 };
 
+export type OpenAICompatibleClientOptions = {
+  langfuse?: LangfuseRuntime;
+};
+
 export class OpenAICompatibleClient {
   private readonly apiKey: string | undefined;
   private readonly baseUrl: string;
@@ -44,14 +49,16 @@ export class OpenAICompatibleClient {
   private readonly temperature: number | undefined;
   private readonly maxTokens: number | undefined;
   private readonly timeoutMs: number;
+  private readonly langfuse: LangfuseRuntime | undefined;
 
-  constructor(cfg: LlmConfig) {
+  constructor(cfg: LlmConfig, options: OpenAICompatibleClientOptions = {}) {
     this.apiKey = cfg.apiKey;
     this.baseUrl = (cfg.baseUrl ?? "https://api.openai.com/v1").replace(/\/$/, "");
     this.model = cfg.model;
     this.temperature = cfg.temperature;
     this.maxTokens = cfg.maxTokens;
     this.timeoutMs = cfg.timeoutMs ?? 60000;
+    this.langfuse = options.langfuse;
   }
 
   async *streamChatCompletions(params: {
@@ -66,6 +73,7 @@ export class OpenAICompatibleClient {
       : controller.signal;
 
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+    let generation: LangfuseGenerationTrace | undefined;
     try {
       const url = `${this.baseUrl}/chat/completions`;
       const body: Record<string, unknown> = {
@@ -79,6 +87,17 @@ export class OpenAICompatibleClient {
         body.tools = params.tools;
         body.tool_choice = params.toolChoice ?? "auto";
       }
+
+      generation = this.startGenerationTrace({
+        name: "llm.chat.stream",
+        stream: true,
+        messages: params.messages,
+        ...(params.tools?.length ? { tools: params.tools, toolChoice: params.toolChoice ?? "auto" } : {}),
+      });
+      let content = "";
+      let reasoningContent = "";
+      let finishReason: string | undefined;
+      const toolCalls: ToolCall[] = [];
 
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
@@ -100,6 +119,7 @@ export class OpenAICompatibleClient {
       const decoder = new TextDecoder();
       let buffer = "";
 
+      let done = false;
       for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
         buffer += decoder.decode(chunk, { stream: true });
         while (true) {
@@ -112,7 +132,10 @@ export class OpenAICompatibleClient {
           if (!trimmed.startsWith("data:")) continue;
           const data = trimmed.slice("data:".length).trim();
           if (!data) continue;
-          if (data === "[DONE]") return;
+          if (data === "[DONE]") {
+            done = true;
+            break;
+          }
 
           let parsed: unknown;
           try {
@@ -122,9 +145,23 @@ export class OpenAICompatibleClient {
           }
 
           const delta = extractDelta(parsed);
-          if (delta) yield delta;
+          if (delta) {
+            content += delta.content ?? "";
+            reasoningContent += delta.reasoningContent ?? "";
+            if (delta.finishReason) finishReason = delta.finishReason;
+            if (delta.toolCalls?.length) toolCalls.push(...delta.toolCalls);
+            yield delta;
+          }
         }
+        if (done) break;
       }
+      generation?.end({
+        output: summarizeCompletionOutput({ content, reasoningContent, toolCalls }),
+        ...(finishReason ? { finishReason } : {}),
+      });
+    } catch (error) {
+      generation?.error(error);
+      throw error;
     } finally {
       clearTimeout(timeout);
     }
@@ -142,6 +179,7 @@ export class OpenAICompatibleClient {
       : controller.signal;
 
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+    let generation: LangfuseGenerationTrace | undefined;
     try {
       const url = `${this.baseUrl}/chat/completions`;
       const body: Record<string, unknown> = {
@@ -155,6 +193,13 @@ export class OpenAICompatibleClient {
         body.tools = params.tools;
         body.tool_choice = params.toolChoice ?? "auto";
       }
+
+      generation = this.startGenerationTrace({
+        name: "llm.chat.completion",
+        stream: false,
+        messages: params.messages,
+        ...(params.tools?.length ? { tools: params.tools, toolChoice: params.toolChoice ?? "auto" } : {}),
+      });
 
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
@@ -174,10 +219,45 @@ export class OpenAICompatibleClient {
       }
 
       const payload = (await res.json().catch(() => null)) as unknown;
-      return extractMessage(payload) ?? {};
+      const message = extractMessage(payload) ?? {};
+      const usageDetails = extractUsageDetails(payload);
+      generation?.end({
+        output: summarizeCompletionOutput({
+          content: message.content ?? "",
+          reasoningContent: message.reasoningContent ?? "",
+          toolCalls: message.toolCalls ?? [],
+        }),
+        ...(message.finishReason ? { finishReason: message.finishReason } : {}),
+        ...(usageDetails ? { usageDetails } : {}),
+      });
+      return message;
+    } catch (error) {
+      generation?.error(error);
+      throw error;
     } finally {
       clearTimeout(timeout);
     }
+  }
+
+  private startGenerationTrace(params: {
+    name: string;
+    stream: boolean;
+    messages: OpenAIChatMessage[];
+    tools?: OpenAIChatTool[];
+    toolChoice?: string;
+  }): LangfuseGenerationTrace | undefined {
+    return this.langfuse?.traceGeneration({
+      name: params.name,
+      model: this.model,
+      stream: params.stream,
+      messages: summarizeMessages(params.messages),
+      ...(params.tools?.length ? { tools: summarizeTools(params.tools) } : {}),
+      ...(params.toolChoice ? { toolChoice: params.toolChoice } : {}),
+      modelParameters: {
+        ...(this.temperature != null ? { temperature: this.temperature } : {}),
+        ...(this.maxTokens != null ? { max_tokens: this.maxTokens } : {}),
+      },
+    });
   }
 }
 
@@ -262,4 +342,61 @@ function parseToolCalls(raw: unknown): ToolCall[] | undefined {
     out.push({ id, name, args });
   }
   return out.length ? out : undefined;
+}
+
+function summarizeMessages(messages: readonly OpenAIChatMessage[]): Array<Record<string, unknown>> {
+  return messages.map((message) => ({
+    role: message.role,
+    ...(message.name ? { name: message.name } : {}),
+    ...(message.tool_call_id ? { tool_call_id: message.tool_call_id } : {}),
+    ...summarizeContent(message.content),
+    ...(message.tool_calls?.length
+      ? { tool_calls: message.tool_calls.map((toolCall) => ({ id: toolCall.id, name: toolCall.function.name })) }
+      : {}),
+  }));
+}
+
+function summarizeTools(tools: readonly OpenAIChatTool[]): Array<Record<string, unknown>> {
+  return tools.map((tool) => ({
+    name: tool.function.name,
+    ...(tool.function.description ? { description: tool.function.description.slice(0, 300) } : {}),
+  }));
+}
+
+function summarizeContent(content: string | null): Record<string, unknown> {
+  if (content == null) return { content: null };
+  return {
+    content_length: content.length,
+    content_preview: content.slice(0, 1000),
+  };
+}
+
+function summarizeCompletionOutput(params: {
+  content: string;
+  reasoningContent: string;
+  toolCalls: readonly ToolCall[];
+}): Record<string, unknown> {
+  return {
+    content_length: params.content.length,
+    content_preview: params.content.slice(0, 1000),
+    ...(params.reasoningContent ? { reasoning_content_length: params.reasoningContent.length } : {}),
+    ...(params.toolCalls.length ? { tool_calls: params.toolCalls.map((toolCall) => ({ id: toolCall.id, name: toolCall.name })) } : {}),
+  };
+}
+
+function extractUsageDetails(payload: unknown): Record<string, number> | undefined {
+  if (!payload || typeof payload !== "object") return undefined;
+  const usage = (payload as Record<string, unknown>).usage;
+  if (!usage || typeof usage !== "object") return undefined;
+  const raw = usage as Record<string, unknown>;
+  const details: Record<string, number> = {};
+  for (const [sourceKey, targetKey] of [
+    ["prompt_tokens", "input"],
+    ["completion_tokens", "output"],
+    ["total_tokens", "total"],
+  ] as const) {
+    const value = raw[sourceKey];
+    if (typeof value === "number" && Number.isFinite(value)) details[targetKey] = value;
+  }
+  return Object.keys(details).length ? details : undefined;
 }

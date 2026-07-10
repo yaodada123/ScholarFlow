@@ -4,6 +4,7 @@ import { OpenAICompatibleClient } from "../llm/openai-compatible.js";
 import { knowledgeSourceToResource, listKnowledgeSources } from "../knowledge/store.js";
 import { selectSkills } from "../skills/selector.js";
 import { buildFallbackPlan } from "../workflow.js";
+import { createLangfuseRuntime } from "../trace/langfuse.js";
 import { buildExecutionGraph, buildPlanningGraph } from "../graph/build-research-graph.js";
 import { createExecutionNodes, createPlanningNodes } from "../graph/nodes/research-nodes.js";
 import { streamResearchGraphEvents } from "../graph/stream-adapter.js";
@@ -297,8 +298,13 @@ export async function* runChatWorkflow(params) {
         activeSkills: skillSelection.activeSkills,
         skillSelectionReason: skillSelection.reason,
     });
+    const langfuse = createLangfuseRuntime({
+        runId: trace?.runId ?? `run_${randomUUID()}`,
+        threadId: request.thread_id,
+        ...(request.workflow_mode ? { workflowMode: request.workflow_mode, tags: [request.workflow_mode] } : {}),
+    });
     const llmCfg = pickLlmConfig({ enableDeepThinking: request.enable_deep_thinking });
-    const llm = llmCfg ? new OpenAICompatibleClient(llmCfg) : null;
+    const llm = llmCfg ? new OpenAICompatibleClient(llmCfg, { langfuse }) : null;
     try {
         if (request.workflow_mode === "chat" && !isFeedback) {
             for await (const event of runPlainChatResponse({
@@ -336,6 +342,7 @@ export async function* runChatWorkflow(params) {
         const stream = await planningGraph.stream(finalPlanningState, {
             streamMode: ["custom", "values"],
             ...(signal ? { signal } : {}),
+            ...(langfuse.handler ? { callbacks: [langfuse.handler] } : {}),
         });
         for await (const event of streamResearchGraphEvents({
             stream,
@@ -387,6 +394,7 @@ export async function* runChatWorkflow(params) {
         const execStream = await executionGraph.stream(execState, {
             streamMode: ["custom", "values"],
             ...(signal ? { signal } : {}),
+            ...(langfuse.handler ? { callbacks: [langfuse.handler] } : {}),
         });
         for await (const event of streamResearchGraphEvents({
             stream: execStream,
@@ -408,5 +416,6 @@ export async function* runChatWorkflow(params) {
             runStatus = "aborted";
         trace?.runEnded(runStatus, { reason: runEndReason });
         await trace?.flush();
+        await langfuse.flush();
     }
 }

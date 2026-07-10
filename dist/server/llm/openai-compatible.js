@@ -5,13 +5,15 @@ export class OpenAICompatibleClient {
     temperature;
     maxTokens;
     timeoutMs;
-    constructor(cfg) {
+    langfuse;
+    constructor(cfg, options = {}) {
         this.apiKey = cfg.apiKey;
         this.baseUrl = (cfg.baseUrl ?? "https://api.openai.com/v1").replace(/\/$/, "");
         this.model = cfg.model;
         this.temperature = cfg.temperature;
         this.maxTokens = cfg.maxTokens;
         this.timeoutMs = cfg.timeoutMs ?? 60000;
+        this.langfuse = options.langfuse;
     }
     async *streamChatCompletions(params) {
         const controller = new AbortController();
@@ -19,6 +21,7 @@ export class OpenAICompatibleClient {
             ? AbortSignal.any([params.signal, controller.signal])
             : controller.signal;
         const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+        let generation;
         try {
             const url = `${this.baseUrl}/chat/completions`;
             const body = {
@@ -34,6 +37,16 @@ export class OpenAICompatibleClient {
                 body.tools = params.tools;
                 body.tool_choice = params.toolChoice ?? "auto";
             }
+            generation = this.startGenerationTrace({
+                name: "llm.chat.stream",
+                stream: true,
+                messages: params.messages,
+                ...(params.tools?.length ? { tools: params.tools, toolChoice: params.toolChoice ?? "auto" } : {}),
+            });
+            let content = "";
+            let reasoningContent = "";
+            let finishReason;
+            const toolCalls = [];
             const headers = {
                 "Content-Type": "application/json",
             };
@@ -51,6 +64,7 @@ export class OpenAICompatibleClient {
             }
             const decoder = new TextDecoder();
             let buffer = "";
+            let done = false;
             for await (const chunk of res.body) {
                 buffer += decoder.decode(chunk, { stream: true });
                 while (true) {
@@ -65,8 +79,10 @@ export class OpenAICompatibleClient {
                     const data = trimmed.slice("data:".length).trim();
                     if (!data)
                         continue;
-                    if (data === "[DONE]")
-                        return;
+                    if (data === "[DONE]") {
+                        done = true;
+                        break;
+                    }
                     let parsed;
                     try {
                         parsed = JSON.parse(data);
@@ -75,10 +91,27 @@ export class OpenAICompatibleClient {
                         continue;
                     }
                     const delta = extractDelta(parsed);
-                    if (delta)
+                    if (delta) {
+                        content += delta.content ?? "";
+                        reasoningContent += delta.reasoningContent ?? "";
+                        if (delta.finishReason)
+                            finishReason = delta.finishReason;
+                        if (delta.toolCalls?.length)
+                            toolCalls.push(...delta.toolCalls);
                         yield delta;
+                    }
                 }
+                if (done)
+                    break;
             }
+            generation?.end({
+                output: summarizeCompletionOutput({ content, reasoningContent, toolCalls }),
+                ...(finishReason ? { finishReason } : {}),
+            });
+        }
+        catch (error) {
+            generation?.error(error);
+            throw error;
         }
         finally {
             clearTimeout(timeout);
@@ -90,6 +123,7 @@ export class OpenAICompatibleClient {
             ? AbortSignal.any([params.signal, controller.signal])
             : controller.signal;
         const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+        let generation;
         try {
             const url = `${this.baseUrl}/chat/completions`;
             const body = {
@@ -105,6 +139,12 @@ export class OpenAICompatibleClient {
                 body.tools = params.tools;
                 body.tool_choice = params.toolChoice ?? "auto";
             }
+            generation = this.startGenerationTrace({
+                name: "llm.chat.completion",
+                stream: false,
+                messages: params.messages,
+                ...(params.tools?.length ? { tools: params.tools, toolChoice: params.toolChoice ?? "auto" } : {}),
+            });
             const headers = {
                 "Content-Type": "application/json",
             };
@@ -121,11 +161,40 @@ export class OpenAICompatibleClient {
                 throw new Error(`LLM HTTP ${res.status}: ${res.statusText}${text ? ` - ${text}` : ""}`);
             }
             const payload = (await res.json().catch(() => null));
-            return extractMessage(payload) ?? {};
+            const message = extractMessage(payload) ?? {};
+            const usageDetails = extractUsageDetails(payload);
+            generation?.end({
+                output: summarizeCompletionOutput({
+                    content: message.content ?? "",
+                    reasoningContent: message.reasoningContent ?? "",
+                    toolCalls: message.toolCalls ?? [],
+                }),
+                ...(message.finishReason ? { finishReason: message.finishReason } : {}),
+                ...(usageDetails ? { usageDetails } : {}),
+            });
+            return message;
+        }
+        catch (error) {
+            generation?.error(error);
+            throw error;
         }
         finally {
             clearTimeout(timeout);
         }
+    }
+    startGenerationTrace(params) {
+        return this.langfuse?.traceGeneration({
+            name: params.name,
+            model: this.model,
+            stream: params.stream,
+            messages: summarizeMessages(params.messages),
+            ...(params.tools?.length ? { tools: summarizeTools(params.tools) } : {}),
+            ...(params.toolChoice ? { toolChoice: params.toolChoice } : {}),
+            modelParameters: {
+                ...(this.temperature != null ? { temperature: this.temperature } : {}),
+                ...(this.maxTokens != null ? { max_tokens: this.maxTokens } : {}),
+            },
+        });
     }
 }
 function extractMessage(payload) {
@@ -212,4 +281,56 @@ function parseToolCalls(raw) {
         out.push({ id, name, args });
     }
     return out.length ? out : undefined;
+}
+function summarizeMessages(messages) {
+    return messages.map((message) => ({
+        role: message.role,
+        ...(message.name ? { name: message.name } : {}),
+        ...(message.tool_call_id ? { tool_call_id: message.tool_call_id } : {}),
+        ...summarizeContent(message.content),
+        ...(message.tool_calls?.length
+            ? { tool_calls: message.tool_calls.map((toolCall) => ({ id: toolCall.id, name: toolCall.function.name })) }
+            : {}),
+    }));
+}
+function summarizeTools(tools) {
+    return tools.map((tool) => ({
+        name: tool.function.name,
+        ...(tool.function.description ? { description: tool.function.description.slice(0, 300) } : {}),
+    }));
+}
+function summarizeContent(content) {
+    if (content == null)
+        return { content: null };
+    return {
+        content_length: content.length,
+        content_preview: content.slice(0, 1000),
+    };
+}
+function summarizeCompletionOutput(params) {
+    return {
+        content_length: params.content.length,
+        content_preview: params.content.slice(0, 1000),
+        ...(params.reasoningContent ? { reasoning_content_length: params.reasoningContent.length } : {}),
+        ...(params.toolCalls.length ? { tool_calls: params.toolCalls.map((toolCall) => ({ id: toolCall.id, name: toolCall.name })) } : {}),
+    };
+}
+function extractUsageDetails(payload) {
+    if (!payload || typeof payload !== "object")
+        return undefined;
+    const usage = payload.usage;
+    if (!usage || typeof usage !== "object")
+        return undefined;
+    const raw = usage;
+    const details = {};
+    for (const [sourceKey, targetKey] of [
+        ["prompt_tokens", "input"],
+        ["completion_tokens", "output"],
+        ["total_tokens", "total"],
+    ]) {
+        const value = raw[sourceKey];
+        if (typeof value === "number" && Number.isFinite(value))
+            details[targetKey] = value;
+    }
+    return Object.keys(details).length ? details : undefined;
 }

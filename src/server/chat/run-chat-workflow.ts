@@ -11,6 +11,7 @@ import type { ThreadStore } from "../runtime/thread-store.js";
 import type { WorkflowState } from "../runtime/types.js";
 import type { TraceRecorder } from "../trace/recorder.js";
 import type { TraceStatus } from "../trace/types.js";
+import { createLangfuseRuntime } from "../trace/langfuse.js";
 import { buildExecutionGraph, buildPlanningGraph } from "../graph/build-research-graph.js";
 import { createExecutionNodes, createPlanningNodes } from "../graph/nodes/research-nodes.js";
 import { streamResearchGraphEvents } from "../graph/stream-adapter.js";
@@ -355,8 +356,13 @@ export async function* runChatWorkflow(params: {
     skillSelectionReason: skillSelection.reason,
   });
 
+  const langfuse = createLangfuseRuntime({
+    runId: trace?.runId ?? `run_${randomUUID()}`,
+    threadId: request.thread_id,
+    ...(request.workflow_mode ? { workflowMode: request.workflow_mode, tags: [request.workflow_mode] } : {}),
+  });
   const llmCfg = pickLlmConfig({ enableDeepThinking: request.enable_deep_thinking });
-  const llm = llmCfg ? new OpenAICompatibleClient(llmCfg) : null;
+  const llm = llmCfg ? new OpenAICompatibleClient(llmCfg, { langfuse }) : null;
 
   try {
   if (request.workflow_mode === "chat" && !isFeedback) {
@@ -399,6 +405,7 @@ export async function* runChatWorkflow(params: {
   const stream = await planningGraph.stream(finalPlanningState, {
     streamMode: ["custom", "values"],
     ...(signal ? { signal } : {}),
+    ...(langfuse.handler ? { callbacks: [langfuse.handler] } : {}),
   });
   for await (const event of streamResearchGraphEvents<ResearchGraphState>({
     stream,
@@ -458,6 +465,7 @@ export async function* runChatWorkflow(params: {
   const execStream = await executionGraph.stream(execState, {
     streamMode: ["custom", "values"],
     ...(signal ? { signal } : {}),
+    ...(langfuse.handler ? { callbacks: [langfuse.handler] } : {}),
   });
   for await (const event of streamResearchGraphEvents<ResearchGraphState>({
     stream: execStream,
@@ -476,5 +484,6 @@ export async function* runChatWorkflow(params: {
     if (signal?.aborted) runStatus = "aborted";
     trace?.runEnded(runStatus, { reason: runEndReason });
     await trace?.flush();
+    await langfuse.flush();
   }
 }

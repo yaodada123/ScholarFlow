@@ -84,8 +84,8 @@ BASIC_MODEL__BASE_URL=https://api.deepseek.com
 npm run dev:all
 ```
 
-- 前端：`http://localhost:3000`
-- 后端：`http://localhost:8000`
+- 前端：`http://localhost:3300`
+- 后端：`http://localhost:8899`
 
 ### 分别启动
 
@@ -93,6 +93,8 @@ npm run dev:all
 npm run dev:server
 npm run dev:web
 ```
+
+更多启动场景和可选配置说明见 [`docs/startup-configuration.md`](docs/startup-configuration.md)。
 
 ## 目录结构
 
@@ -103,9 +105,9 @@ npm run dev:web
 
 ## 常用配置（环境变量）
 
-- `NEXT_PUBLIC_API_URL`：前端请求后端的 API 地址（例如 `http://localhost:8000/api`）
-- `PORT`：后端端口（默认 8000）
-- `ALLOWED_ORIGINS`：CORS 白名单（默认 `http://localhost:3000,http://127.0.0.1:3000`）
+- `NEXT_PUBLIC_API_URL`：前端请求后端的 API 地址（例如 `http://localhost:8899/api`）
+- `PORT`：后端端口（默认 8899）
+- `ALLOWED_ORIGINS`：CORS 白名单（默认 `http://localhost:3300,http://127.0.0.1:3300`）
 - `RAG_PROVIDER`：RAG provider（未设置时默认 `local`）
 - `ENABLE_MCP_SERVER_CONFIGURATION`：是否启用 MCP 配置能力（默认 false；`npm run dev:server` / `dev:all` 会开启）
 - `BASIC_MODEL__*` / `REASONING_MODEL__*`：模型配置（最少需要 `BASIC_MODEL__MODEL` 与 `BASIC_MODEL__API_KEY`）

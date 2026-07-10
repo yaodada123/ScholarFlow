@@ -22,6 +22,7 @@ import { buildLocalResource, extractTextFromRagFile, isAllowedRagFilename, RagTe
 import { indexLocalResource } from "./rag/lancedb-store.js";
 import { listReplayRuns, listAllReplayRuns, readLatestReplayRun, readReplayRun, ReplayRecorder } from "./replay/recorder.js";
 import { listTraceRuns, readLatestTraceRun, readTraceRun, TraceRecorder } from "./trace/recorder.js";
+import { isLangfuseEnabled } from "./trace/langfuse.js";
 import { addKnowledgeSource, createProject, getProject, KnowledgeConflictError, KnowledgeNotFoundError, listKnowledgeSources, listProjects, } from "./knowledge/store.js";
 import { AddKnowledgeSourceSchema, CreateProjectSchema } from "./knowledge/types.js";
 const EnvSchema = z.object({
@@ -148,6 +149,12 @@ const ReportEvaluateRequestSchema = z.object({
     report_style: z.string().optional().default("default"),
     use_llm: z.boolean().optional().default(false),
 });
+const ReportImproveRequestSchema = z.object({
+    content: z.string().min(1),
+    query: z.string().optional().default(""),
+    report_style: z.string().optional().default("default"),
+    evaluation: z.unknown().optional(),
+});
 const ProseGenerateRequestSchema = z.object({
     prompt: z.string().min(1),
     option: z.string().optional(),
@@ -204,6 +211,69 @@ function buildProseInstruction(option, command) {
     if (option === "zap")
         return "Rewrite the text according to the user's implied instruction.";
     return "Improve the text for clarity, structure, and usefulness.";
+}
+function buildReportImprovePrompt(params) {
+    const evaluationJson = params.evaluation
+        ? JSON.stringify(params.evaluation, null, 2).slice(0, 12_000)
+        : "No evaluation JSON was provided. Infer improvement priorities from the report.";
+    return [
+        "Improve the following academic research report using the evaluation result as the revision brief.",
+        "Return only the improved report in Markdown. Do not wrap it in code fences.",
+        "Preserve claims that are already well supported. Do not invent citations, URLs, DOIs, figures, or sources.",
+        "If evidence is insufficient, qualify the claim or mark that additional evidence is needed instead of fabricating support.",
+        "Prioritize these actions when applicable: fill missing expected sections, strengthen evidence chains, improve citation formatting, remove unsupported overclaims, improve section flow, and polish academic prose.",
+        "Keep the report style and user query aligned with the original request.",
+        "",
+        `Research query: ${params.query || "Not provided"}`,
+        `Report style: ${params.reportStyle}`,
+        "",
+        "Evaluation result:",
+        evaluationJson,
+        "",
+        "Original report:",
+        params.content.slice(0, 60_000),
+    ].join("\n");
+}
+function buildReportImprovementPlan(evaluation) {
+    const plan = new Set();
+    const value = evaluation && typeof evaluation === "object" ? evaluation : {};
+    const metrics = value.metrics && typeof value.metrics === "object" ? value.metrics : {};
+    const llmEvaluation = value.llm_evaluation && typeof value.llm_evaluation === "object"
+        ? value.llm_evaluation
+        : {};
+    const llmScores = llmEvaluation.scores && typeof llmEvaluation.scores === "object"
+        ? llmEvaluation.scores
+        : {};
+    if (typeof metrics.section_coverage_score === "number" && metrics.section_coverage_score < 1) {
+        plan.add("补全缺失章节，优先完善 overview、key findings、evidence、discussion、limitations 和 references。");
+    }
+    if (typeof metrics.citation_count === "number" && metrics.citation_count < 6) {
+        plan.add("增强证据链和引用密度，减少无来源支撑的判断。");
+    }
+    if (typeof metrics.unique_sources === "number" && metrics.unique_sources < 4) {
+        plan.add("提高来源多样性，避免报告过度依赖单一来源。");
+    }
+    if (typeof llmScores.completeness === "number" && llmScores.completeness < 8) {
+        plan.add("扩展背景、关键发现、结论和局限性，让论证更完整。");
+    }
+    if (typeof llmScores.coherence === "number" && llmScores.coherence < 8) {
+        plan.add("重组段落顺序并补充过渡句，提升整体连贯性。");
+    }
+    if (typeof llmScores.citation_quality === "number" && llmScores.citation_quality < 8) {
+        plan.add("规范引用表达，并对证据不足的内容进行限定或标注。");
+    }
+    if (typeof llmScores.writing_quality === "number" && llmScores.writing_quality < 8) {
+        plan.add("润色学术表达，提升措辞准确性和可读性。");
+    }
+    const suggestions = Array.isArray(llmEvaluation.suggestions) ? llmEvaluation.suggestions : [];
+    for (const suggestion of suggestions.slice(0, 4)) {
+        if (typeof suggestion === "string" && suggestion.trim())
+            plan.add(suggestion.trim());
+    }
+    if (plan.size === 0) {
+        plan.add("根据当前评分结果进行结构、证据和表达层面的综合优化。");
+    }
+    return Array.from(plan);
 }
 function isAllowedImageFilename(filename) {
     const ext = path.extname(filename).toLowerCase();
@@ -273,6 +343,9 @@ app.get("/api/config", async () => {
             reasoning: models.reasoning ?? [],
             ...(models.vision ? { vision: models.vision } : {}),
             ...(models.code ? { code: models.code } : {}),
+        },
+        observability: {
+            langfuse_enabled: isLangfuseEnabled(),
         },
     };
 });
@@ -399,6 +472,36 @@ app.post("/api/report/evaluate", async (request, reply) => {
     }
     catch (e) {
         const message = e instanceof Error ? e.message : "Invalid report evaluation request";
+        reply.code(400).send(toDetailError(message));
+        return reply;
+    }
+});
+app.post("/api/report/improve", async (request, reply) => {
+    try {
+        const parsed = ReportImproveRequestSchema.parse(request.body ?? {});
+        const improvementPlan = buildReportImprovementPlan(parsed.evaluation);
+        const improved = await collectLlmText({
+            system: "You are an academic report revision expert. Return only the improved Markdown report.",
+            user: buildReportImprovePrompt({
+                content: parsed.content,
+                query: parsed.query,
+                reportStyle: parsed.report_style,
+                evaluation: parsed.evaluation,
+            }),
+            timeoutMs: 180000,
+        });
+        if (!improved) {
+            reply
+                .code(503)
+                .send(toDetailError("No LLM model is configured for report improvement"));
+            return reply;
+        }
+        const evaluation = evaluateReportDeterministic(improved);
+        reply.send({ content: improved, evaluation, improvement_plan: improvementPlan });
+        return reply;
+    }
+    catch (e) {
+        const message = e instanceof Error ? e.message : "Invalid report improvement request";
         reply.code(400).send(toDetailError(message));
         return reply;
     }

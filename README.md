@@ -78,14 +78,16 @@ BASIC_MODEL__BASE_URL=https://api.deepseek.com
 
 > Note: `.env` usually contains secrets. Do not commit it to a public repo.
 
+Optional Langfuse observability is enabled when both `LANGFUSE_SECRET_KEY` and `LANGFUSE_PUBLIC_KEY` are set. Use `LANGFUSE_BASE_URL=http://localhost:3090` for a local self-hosted instance or `https://cloud.langfuse.com` for Langfuse Cloud. You can verify server-side detection with `GET /api/config`, which returns `observability.langfuse_enabled`. Langfuse traces include workflow metadata plus summarized LLM inputs/outputs for debugging; API keys and authorization headers are not recorded.
+
 ### Start (recommended, one command for both)
 
 ```bash
 npm run dev:all
 ```
 
-- Frontend: `http://localhost:3000`
-- Backend: `http://localhost:8000`
+- Frontend: `http://localhost:3300`
+- Backend: `http://localhost:8899`
 
 ### Start separately
 
@@ -93,6 +95,8 @@ npm run dev:all
 npm run dev:server
 npm run dev:web
 ```
+
+For detailed startup scenarios and optional configuration, see [`docs/startup-configuration.md`](docs/startup-configuration.md).
 
 ## Project Layout
 
@@ -103,13 +107,14 @@ npm run dev:web
 
 ## Common Config (Environment Variables)
 
-- `NEXT_PUBLIC_API_URL`: frontend API base URL (e.g. `http://localhost:8000/api`)
-- `PORT`: backend port (default 8000)
-- `ALLOWED_ORIGINS`: CORS allowlist (default `http://localhost:3000,http://127.0.0.1:3000`)
+- `NEXT_PUBLIC_API_URL`: frontend API base URL (e.g. `http://localhost:8899/api`)
+- `PORT`: backend port (default 8899)
+- `ALLOWED_ORIGINS`: CORS allowlist (default `http://localhost:3300,http://127.0.0.1:3300`)
 - `RAG_PROVIDER`: RAG provider (defaults to `local` if not set)
 - `ENABLE_MCP_SERVER_CONFIGURATION`: enable MCP server configuration (default false; enabled by `npm run dev:server` / `dev:all`)
 - `BASIC_MODEL__*` / `REASONING_MODEL__*`: model config (minimum: `BASIC_MODEL__MODEL` and `BASIC_MODEL__API_KEY`)
 - `TAVILY_API_KEY`: enable Web Search (no key => automatically disabled)
+- `LANGFUSE_SECRET_KEY` / `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_BASE_URL`: optional Langfuse tracing for chat and research workflows
 
 ## Roadmap
 
